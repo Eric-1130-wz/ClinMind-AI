@@ -1,0 +1,371 @@
+"""Render two original illustrated ClinMind-AI concept screens as 2560x1440 PNGs.
+
+No external image services, network resources, or application files are used.
+"""
+from pathlib import Path
+import html
+import math
+import subprocess
+import tempfile
+import time
+
+ROOT = Path(__file__).resolve().parent
+CHROME = Path(r'C:\Program Files\Google\Chrome\Application\chrome.exe')
+if not CHROME.exists():
+    CHROME = Path(r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe')
+
+ICONS = {
+    'plus': '<path d="M12 5v14M5 12h14"/>',
+    'clock': '<circle cx="12" cy="12" r="8"/><path d="M12 7v5l3 2"/>',
+    'sound': '<path d="M4 10h4l5-4v12l-5-4H4zM17 8q5 4 0 8M17 11q1 1 0 2"/>',
+    'gear': '<path d="m10 3-.5 3-2 .9L5 5.5 3 9l2.3 1.7v2.6L3 15l2 3.5 2.5-1.4 2 .9.5 3h4l.5-3 2-.9 2.5 1.4 2-3.5-2.3-1.7v-2.6L21 9l-2-3.5-2.5 1.4-2-.9-.5-3z"/><circle cx="12" cy="12" r="3"/>',
+    'chat': '<path d="M20 11a8 8 0 0 1-8 8H8l-5 3 1.5-6A8 8 0 1 1 20 11Z"/><path d="M8 10h8M8 13h5"/>',
+    'scope': '<path d="M5 3v6a5 5 0 0 0 10 0V3M3 3h4M13 3h4M10 14v2a5 5 0 0 0 10 0v-3"/><circle cx="20" cy="10" r="3"/>',
+    'lab': '<path d="M9 3h6M10 3v7L4 20h16l-6-10V3M7 15h10"/>',
+    'pill': '<path d="M8 4a5 5 0 0 1 7 7l-6 7a5 5 0 0 1-7-7Z" transform="translate(3 1)"/><path d="m8 9 7 6"/>',
+    'door': '<path d="M4 21V3h12v18M2 21h18M11 12h1M17 7h5m-2-2 2 2-2 2"/>',
+    'file': '<path d="M6 3h8l5 5v13H6ZM14 3v6h5M9 13h7M9 17h7"/>',
+    'heart': '<path d="M12 20 4 12C-2 5 7 0 12 7c5-7 14-2 8 5Z"/>',
+    'arrow': '<path d="M4 12h15m-6-6 6 6-6 6"/>',
+    'back': '<path d="M20 12H5m6-6-6 6 6 6"/>',
+    'monitor': '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M12 17v4M8 21h8M6 11h3l2-4 2 7 2-3h3"/>',
+    'check': '<path d="m5 12 4 4L19 6"/>',
+    'target': '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',
+    'pause': '<path d="M9 5v14M16 5v14"/>',
+    'wave': '<path d="M2 12h5l3-8 4 16 3-8h5"/>',
+    'shield': '<path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6Z"/><path d="m8 12 3 3 5-6"/>',
+}
+
+def icon(name, size=22, extra=''):
+    return f'<svg class="icon {extra}" width="{size}" height="{size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">{ICONS[name]}</svg>'
+
+DEFS = '''<defs>
+  <linearGradient id="wall" x2="0" y2="1"><stop stop-color="#eff1df"/><stop offset="1" stop-color="#dce8d9"/></linearGradient>
+  <linearGradient id="window" x2="0" y2="1"><stop stop-color="#b7d9d5"/><stop offset="1" stop-color="#edf1d9"/></linearGradient>
+  <linearGradient id="wood" x2="0.2" y2="1"><stop stop-color="#e5c99f"/><stop offset=".5" stop-color="#d8b287"/><stop offset="1" stop-color="#c09870"/></linearGradient>
+  <linearGradient id="woodedge" x2="0" y2="1"><stop stop-color="#bb9069"/><stop offset="1" stop-color="#8b654b"/></linearGradient>
+  <linearGradient id="case" x2=".8" y2="1"><stop stop-color="#506d74"/><stop offset=".6" stop-color="#304c55"/><stop offset="1" stop-color="#263e48"/></linearGradient>
+  <linearGradient id="skin" x2=".7" y2="1"><stop stop-color="#f5ccac"/><stop offset=".7" stop-color="#e8b392"/><stop offset="1" stop-color="#d49a7b"/></linearGradient>
+  <linearGradient id="manskin" x2=".8" y2="1"><stop stop-color="#f0c7a5"/><stop offset=".65" stop-color="#deb391"/><stop offset="1" stop-color="#c98e74"/></linearGradient>
+  <linearGradient id="cardigan" x2=".7" y2="1"><stop stop-color="#b5a7b6"/><stop offset="1" stop-color="#807b99"/></linearGradient>
+  <linearGradient id="shirt" x2=".7" y2="1"><stop stop-color="#8eada9"/><stop offset=".6" stop-color="#6d9290"/><stop offset="1" stop-color="#507b7c"/></linearGradient>
+  <linearGradient id="hair" x2=".8" y2="1"><stop stop-color="#675c51"/><stop offset=".6" stop-color="#403e38"/><stop offset="1" stop-color="#343931"/></linearGradient>
+  <linearGradient id="curtain" x2="1" y2="0"><stop stop-color="#92b9ab"/><stop offset=".3" stop-color="#bdd2bf"/><stop offset=".6" stop-color="#a7c6b5"/><stop offset="1" stop-color="#ccdbc6"/></linearGradient>
+  <filter id="sh"><feDropShadow dx="0" dy="9" stdDeviation="10" flood-color="#254447" flood-opacity=".15"/></filter>
+  <filter id="smallsh"><feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#273d3e" flood-opacity=".16"/></filter>
+  <filter id="soft"><feGaussianBlur stdDeviation="12"/></filter>
+  <pattern id="grain" width="120" height="60" patternUnits="userSpaceOnUse"><path d="M-20 15Q40 5 130 15M-10 45Q30 36 115 42" fill="none" stroke="#a87e5e" stroke-width="1" opacity=".13"/></pattern>
+  <pattern id="ecggrid" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M20 0H0V20" fill="none" stroke="#527b79" stroke-opacity=".16" stroke-width=".8"/></pattern>
+</defs>'''
+
+ROOM = '''
+<rect width="1600" height="900" fill="url(#wall)"/>
+<path d="M0 0h1600v85H0Z" fill="#e8e8d9"/>
+<path d="M0 92h1600" stroke="#b0c4b6" stroke-width="5"/>
+<path d="M0 529h1600v371H0Z" fill="#b7cbbc"/>
+<path d="M0 530h1600" stroke="#91b2a5" stroke-width="8"/>
+<path d="M0 670h1600v230H0Z" fill="#b8beb0"/>
+<path d="m600 670-140 230m460-230 150 230M0 765h1600" stroke="#99aca0" stroke-width="2" opacity=".6"/>
+<!-- Window with pale city silhouettes and layered soft curtains. -->
+<g filter="url(#smallsh)"><rect x="55" y="125" width="430" height="374" rx="9" fill="#759c91"/>
+<rect x="66" y="137" width="408" height="348" rx="3" fill="url(#window)"/>
+<path d="M70 353h40v-64h54v96h43v-42h45v-81h67v71h47v-30h38v77h67v101H70Z" fill="#a9c8bf" opacity=".53"/>
+<path d="M90 295h11m21 11h16m89 47h10m44-68h10m15 25h10m70 13h10" stroke="#dfebe0" stroke-width="9"/>
+<path d="M65 306h410M270 137v349" stroke="#e7eee1" stroke-width="10"/>
+<path d="M70 143v335M78 478h388" fill="none" stroke="#f4f4e7" stroke-width="5"/>
+<rect x="44" y="487" width="450" height="15" rx="4" fill="#f0efe0"/>
+</g>
+<path d="M43 121h40l18 376H31Z" fill="url(#curtain)"/><path d="m49 132-5 351m24-348 15 351" stroke="#719f92" opacity=".38" stroke-width="3"/>
+<path d="M439 121h58l10 377h-87Z" fill="url(#curtain)"/><path d="m466 135-7 350m20-350 13 350" stroke="#719f92" opacity=".35" stroke-width="3"/>
+<path d="M26 118h487" stroke="#779a8a" stroke-width="7" stroke-linecap="round"/>
+<!-- Room door and treatment signage. -->
+<rect x="842" y="162" width="196" height="468" rx="10" fill="#93b0a2"/>
+<rect x="853" y="174" width="174" height="451" rx="5" fill="#c7d2b9"/>
+<rect x="875" y="213" width="131" height="130" rx="8" fill="#99b7ad"/>
+<rect x="882" y="220" width="117" height="115" rx="5" fill="#c9ddd2"/>
+<path d="m893 233 91 90m-64-90 64 63" stroke="#e9eee0" stroke-width="10" opacity=".5"/>
+<rect x="869" y="371" width="16" height="73" rx="6" fill="#e5e8d7"/><rect x="873" y="385" width="8" height="44" rx="4" fill="#72968a"/>
+<rect x="891" y="128" width="109" height="30" rx="7" fill="#527c73"/>
+<text x="945" y="148" text-anchor="middle" font-family="Microsoft YaHei" font-size="14" font-weight="bold" fill="#f2f1df">诊 室 03</text>
+<!-- Framed clinical poster and clock. -->
+<g transform="translate(550 177)"><rect width="150" height="179" rx="6" fill="#c2cbbb"/><rect x="6" y="6" width="138" height="167" rx="3" fill="#f4f1df"/>
+<path d="M70 45v57M41 73h57" stroke="#7caaa0" stroke-width="12" stroke-linecap="round"/>
+<path d="M31 127h90m-90 12h74m-74 12h84" stroke="#c1cdbb" stroke-width="5"/></g>
+<g transform="translate(1141 155)"><circle r="34" fill="#d2d9c5"/><circle r="29" fill="#f8f3df" stroke="#9daf9d" stroke-width="2"/><path d="M0-22v4M22 0h-4M0 22v-4M-22 0h4" stroke="#6c897c" stroke-width="2"/><path d="M0-16V0l12 6" stroke="#55766c" stroke-width="3" stroke-linecap="round"/></g>
+<!-- Right-hand supply cabinet. -->
+<g transform="translate(1365 173)" filter="url(#smallsh)"><rect width="179" height="347" rx="12" fill="#acbdaa"/>
+<rect x="9" y="9" width="161" height="201" rx="6" fill="#c7d9ca" stroke="#8ead9e" stroke-width="2"/>
+<path d="M88 13v191M16 111h146" stroke="#93b0a2" stroke-width="3"/>
+<rect x="22" y="63" width="24" height="40" rx="4" fill="#f1efda"/><rect x="24" y="58" width="20" height="9" rx="2" fill="#678d83"/>
+<rect x="57" y="72" width="18" height="31" rx="4" fill="#f1efda"/><rect x="59" y="67" width="14" height="8" rx="2" fill="#b69076"/>
+<rect x="105" y="57" width="44" height="46" rx="5" fill="#e4e7d2"/><path d="M119 80h16m-8-8v16" stroke="#84a69a" stroke-width="5"/>
+<path d="M22 151h49v43H22Zm82 5h46v38h-46Z" fill="#e5e5cd"/><path d="M26 166h41m41 7h38" stroke="#9ebaac" stroke-width="5"/>
+<rect x="10" y="220" width="159" height="55" rx="5" fill="#d7dcc7"/><rect x="10" y="284" width="159" height="52" rx="5" fill="#d7dcc7"/>
+<path d="M72 240h33m-33 64h33" stroke="#8caa9c" stroke-width="5" stroke-linecap="round"/></g>
+<!-- Examination bed visible behind the patient. -->
+<path d="M1265 592h310v39h-310Z" fill="#779b8c"/><path d="M1285 625v73m274-73v73" stroke="#749484" stroke-width="11"/>
+<path d="M1275 554h283q27 0 27 38h-337q0-38 27-38Z" fill="#dde6d3" stroke="#a1b8a8" stroke-width="3"/>
+<path d="M1273 553h78l-2 34h-98q-2-26 22-34Z" fill="#f3f0dc"/>
+<path d="M1405 554h153q23 0 24 32v23h-177Z" fill="#97b5a2"/>
+<path d="M1420 560v43m18-43v44m20-44v44m20-44v44" stroke="#bed0b8" stroke-width="2"/>
+<!-- Small plant on the windowsill. -->
+<path d="M135 445q-34-54-28-77 37 10 40 64M147 441q-2-72 23-84 13 32-23 84M148 443q22-55 49-48-7 34-49 48" fill="#769c73"/>
+<path d="m121 440 8 46h36l9-46Z" fill="#c89574"/><path d="M120 441h55" stroke="#deaf8a" stroke-width="7" stroke-linecap="round"/>
+'''
+
+WOMAN = '''
+<g transform="translate(598 282)">
+  <ellipse cx="102" cy="341" rx="116" ry="22" fill="#294e47" opacity=".13"/>
+  <!-- Hair silhouette behind face. -->
+  <path d="M41 92C34 56 51 18 85 11c48-14 91 15 94 64l-1 82q4 29 14 49c-34 21-111 29-160-9 15-31 9-66 9-105Z" fill="url(#hair)" stroke="#3d4138" stroke-width="2.5"/>
+  <!-- Sweater shoulders and sleeves. -->
+  <path d="M66 165q-39 8-55 39L-14 319q42 25 73 15l9-54 9 65h105l2-79 24 68q30 2 43-21l-36-108q-10-30-58-40Z" fill="url(#cardigan)" stroke="#6f7284" stroke-width="2.5"/>
+  <path d="M83 166q28 16 60-1l22 56-7 115H82l-9-106Z" fill="#e9dfcd" stroke="#b5a6a4" stroke-width="2"/>
+  <path d="M84 167 60 183l10 141 35 14-18-151M145 164l23 20-5 152-34 1 23-150" fill="#b9aabd" stroke="#938b9f" stroke-width="2"/>
+  <path d="M89 159v-32h48v34q-5 30-27 27-18-1-21-29Z" fill="url(#skin)" stroke="#be8b73" stroke-width="2"/>
+  <path d="M89 142q22 16 47-2v18q-31 20-47-2Z" fill="#c18a75" opacity=".45"/>
+  <!-- Head, ears and swept hair. -->
+  <ellipse cx="53" cy="98" rx="12" ry="20" fill="#dba184" stroke="#9e7664" stroke-width="2"/>
+  <ellipse cx="160" cy="99" rx="11" ry="20" fill="#dba184" stroke="#9e7664" stroke-width="2"/>
+  <path d="M61 60q11-32 48-30 37 1 46 34l-1 54q-5 31-38 42-29-3-45-25-15-29-10-75Z" fill="url(#skin)" stroke="#976e5d" stroke-width="2.3"/>
+  <path d="M53 85Q43 38 78 24q39-22 70 8 25 20 16 57l-17-19q-12-3-36-27-9 22-45 29L54 110Z" fill="url(#hair)"/>
+  <path d="M63 61q18-31 45-29M115 30q30 7 40 38M48 123q0 33-9 60m128-65 9 71" stroke="#8a7765" stroke-width="4" opacity=".34" fill="none" stroke-linecap="round"/>
+  <!-- Worried, adult facial features. -->
+  <path d="m73 85 18-5m35 0 17 6" stroke="#665246" stroke-width="3.5" stroke-linecap="round"/>
+  <path d="M73 98q9-8 20-1m31 0q11-7 20 1" stroke="#614c40" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <ellipse cx="84" cy="99" rx="3" ry="4" fill="#4c453b"/><ellipse cx="134" cy="99" rx="3" ry="4" fill="#4c453b"/>
+  <path d="m108 95-3 19 7 3" stroke="#ba866d" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <path d="M95 134q13-7 25-1" stroke="#9a665b" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <path d="M76 111h15m35 0h15" stroke="#c8917b" stroke-width="3" opacity=".4" stroke-linecap="round"/>
+  <circle cx="58" cy="117" r="4" fill="#e3c38c"/>
+  <!-- Arms and clasped hands rest naturally near the desk. -->
+  <path d="m26 232-11 60q-2 23 26 24l75-2 4-30-56-6 6-45" fill="#9c92ac" stroke="#79758a" stroke-width="2.3"/>
+  <path d="m189 225 24 67q5 24-22 31l-70-7-1-29 52-5-12-49" fill="#a69ab2" stroke="#79758a" stroke-width="2.3"/>
+  <path d="M113 284q11-10 21-4l20 10q7 12-6 18l-31 2-25-7 4-20Z" fill="url(#skin)" stroke="#aa7964" stroke-width="2"/>
+  <path d="M115 302q20-4 24-14m-33 10 24-8m-11 13 21-6" stroke="#b88770" stroke-width="1.5" fill="none"/>
+  <path d="M86 221h55m-53 16h49" stroke="#d0c0b5" opacity=".7" stroke-width="2"/>
+  <circle cx="72" cy="218" r="3" fill="#ddd2d7"/><circle cx="74" cy="252" r="3" fill="#ddd2d7"/>
+</g>'''
+
+MAN = '''
+<g transform="translate(993 271)">
+  <ellipse cx="137" cy="368" rx="147" ry="24" fill="#294e47" opacity=".16"/>
+  <!-- Chair is visible on each side. -->
+  <rect x="26" y="236" width="233" height="148" rx="40" fill="#587c70" stroke="#46695f" stroke-width="4"/>
+  <path d="M86 176q-44 2-59 38L2 351q39 16 66 0l14-60 7 80h135l3-90 21 68q25 9 48-7l-30-125q-15-34-61-42Z" fill="url(#shirt)" stroke="#4b6e6d" stroke-width="2.6"/>
+  <path d="m114 174 13 40h31l14-39" fill="#dce1d3" stroke="#95a89b" stroke-width="2"/>
+  <path d="m98 176-9 21 28 35 18-29-18-30m63 0 17 23-26 35-19-29 9-29" fill="#a0b7ae" stroke="#527d78" stroke-width="2"/>
+  <path d="M136 209v154m-12-131h23" stroke="#486f70" stroke-width="2"/>
+  <circle cx="141" cy="252" r="2.3" fill="#c5d0bd"/><circle cx="141" cy="304" r="2.3" fill="#c5d0bd"/>
+  <path d="M113 176v-34h53v34q-11 29-29 26-19-4-24-26Z" fill="url(#manskin)" stroke="#b3866d" stroke-width="2"/>
+  <path d="M114 151q29 17 52-4v24q-25 18-51-2Z" fill="#b88067" opacity=".45"/>
+  <!-- Face and short salt-and-pepper hair. -->
+  <ellipse cx="75" cy="111" rx="13" ry="23" fill="#d5a381" stroke="#9e7861" stroke-width="2"/>
+  <ellipse cx="193" cy="110" rx="12" ry="22" fill="#d5a381" stroke="#9e7861" stroke-width="2"/>
+  <path d="M77 68q12-33 55-35 45-1 61 34l-3 63q-6 34-43 45-31-2-52-23-16-20-18-84Z" fill="url(#manskin)" stroke="#94705b" stroke-width="2.4"/>
+  <path d="M73 102 68 67q-3-28 17-43 23-19 55-11 34-7 53 18 17 21 11 57l-15 27-3-40q-18-8-33-29-16 11-37 10-18 1-26 17l-4 35Z" fill="url(#hair)" stroke="#41473d" stroke-width="2"/>
+  <path d="M76 54q8-24 31-27m-21 32q12-25 35-31m36-3q24 7 34 28M79 78l3 20m111-26-3 24" fill="none" stroke="#a7a092" stroke-width="3" stroke-linecap="round" opacity=".65"/>
+  <path d="M92 92q15 0 23-7m41 0q10 7 25 8" stroke="#595247" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <path d="M96 108q9-7 19-2m39 0q11-4 20 4" stroke="#665549" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <ellipse cx="106" cy="108" rx="2.8" ry="3.4" fill="#51483e"/><ellipse cx="163" cy="109" rx="2.8" ry="3.4" fill="#51483e"/>
+  <path d="m136 103-5 23 9 3m-10-45 3-8m6 9 1-8" stroke="#b1846b" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <path d="M119 147q18-7 35 2" stroke="#92644f" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <path d="M123 155q17 4 28 0M95 119l13 3m52 0 15-2m-69 17-3 7m65-8 3 9" stroke="#bb9176" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+  <path d="M186 91q-7 12-2 16 9 3 7-7Z" fill="#c0dfd7" stroke="#96bfb6" stroke-width="1"/>
+  <!-- Left arm crosses the torso, hand resting at the upper chest. -->
+  <path d="m36 225-12 73q-4 24 20 27 20 5 39-11l67-58-21-27-66 38 9-42" fill="#7e9e99" stroke="#4c7471" stroke-width="2.5"/>
+  <path d="m115 239 23 33 15-13-22-32Z" fill="#b3c4b7" stroke="#5c827c" stroke-width="2"/>
+  <path d="M134 231q7-15 10-30l8-32q4-6 8 0l-4 36 9-29q6-8 9-1l-5 34 10-26q5-6 8 0l-7 34 9-21q5-5 8 1l-12 36q-5 14-29 28Z" fill="url(#manskin)" stroke="#a97d63" stroke-width="2" stroke-linejoin="round"/>
+  <path d="m159 214 19 7m-27-2 22 9m-27-2 18 9" stroke="#ba8c6e" stroke-width="1.5"/>
+  <!-- Other hand rests at the desk edge. -->
+  <path d="m248 244 21 79q6 17-13 25l-54 8-4-26 30-13-13-59" fill="#658985" stroke="#4b716e" stroke-width="2.3"/>
+  <path d="m203 326 1 32-19 5-37-4q-8-5 0-11l27-1q-13-7-12-12 4-6 17 1Z" fill="url(#manskin)" stroke="#ab7c63" stroke-width="2"/>
+  <path d="M155 352h30m-27 5h25" stroke="#bd8d70" stroke-width="1.5"/>
+  <path d="m221 269 15 29m-150 32 11-40m73 55 37-3" stroke="#446b69" stroke-width="2" opacity=".45"/>
+</g>'''
+
+DESK = '''
+<path d="M143 598q607-22 1314 4l146 263v39H-20v-49Z" fill="url(#woodedge)" stroke="#9e7857" stroke-width="3"/>
+<path d="M147 591q606-20 1307 3l154 244q-740 49-1623 0Z" fill="url(#wood)" stroke="#b28b62" stroke-width="3"/>
+<path d="M147 591q606-20 1307 3l154 244q-740 49-1623 0Z" fill="url(#grain)"/>
+<path d="M155 600q610-20 1294 4" fill="none" stroke="#efd7b4" stroke-width="4"/>
+<path d="M-5 837q810 44 1606 0" fill="none" stroke="#edc99b" stroke-width="5"/>
+<path d="M162 642q502-20 1207-1M156 690q631-20 1237 0M386 735q458-20 942-5M535 791q353-11 714-13" fill="none" stroke="#ba926a" stroke-width="1.5" opacity=".35"/>
+<!-- A soft felt mat under the workstation. -->
+<path d="m88 701 419-18 92 92-523 20Z" fill="#608178" opacity=".8" stroke="#4e6b62" stroke-width="2"/>
+<!-- Monitor and pedestal, angled gently towards the doctor. -->
+<ellipse cx="278" cy="709" rx="130" ry="18" fill="#775e49" opacity=".22"/>
+<path d="m255 625-7 62-57 25q75 14 152-3l-55-21-1-64" fill="#4a6464" stroke="#2e494b" stroke-width="3"/>
+<path d="m258 635-3 51 21 4 1-55" fill="#88a09a"/>
+<path d="M70 395q-5-17 15-21l401 32q16 2 15 21l-14 239q-1 18-18 16L68 645q-15-2-14-19Z" fill="url(#case)" stroke="#2a4249" stroke-width="4" filter="url(#sh)"/>
+<path d="m88 394 393 30-13 230-391-35Z" fill="#e6ece0" stroke="#78958e" stroke-width="3"/>
+<path d="m87 394 394 30-2 30-393-31Z" fill="#d2e1d6"/>
+<path d="m98 436 197 15-8 151-199-19Z" fill="#f8f6e8"/>
+<path d="m308 454 157 12-5 78-157-12Z" fill="#243f43"/>
+<path d="m318 493 11 1 8-12 6 25 6-14 17 1 5-7 5 14 9-8 57 5" fill="none" stroke="#60d6a6" stroke-width="2"/>
+<path d="m301 543 157 15-4 81-157-15Z" fill="#f5f3e4"/>
+<g stroke="#b4cabe" stroke-width="4"><path d="m111 455 64 5m-65 12 120 10m-122 4 147 12m-148 13 105 9m-107 10 144 13m-146 9 129 11"/></g>
+<path d="m379 560 39 29-17 31-44-4-19-32Z" fill="none" stroke="#cbdad0" stroke-width="1.5"/>
+<path d="m379 570 33 17-20 29-23-15-19-16Z" fill="#7ab9ad" fill-opacity=".4" stroke="#509f94" stroke-width="2"/>
+<circle cx="271" cy="650" r="3" fill="#8cd8b0"/>
+<path d="m86 400 6-9 11 1" fill="none" stroke="#f1f6e9" stroke-width="2" opacity=".7"/>
+<!-- Compact keyboard with individually drawn key rows. -->
+<path d="m141 733 295-10 48 42-353 13Z" fill="#cad5c8" stroke="#597970" stroke-width="2"/>
+<path d="m154 738 276-9 31 27-310 13Z" fill="#9cb0a0"/>
+<g stroke="#e4e9d9" stroke-width="6" stroke-dasharray="14 4"><path d="m163 742 260-9m-258 18 266-9m-263 19 281-11"/></g>
+<path d="m247 763 105-4" stroke="#e7ebdd" stroke-width="6"/>
+<!-- Stethoscope on the right side of the desk. -->
+<path d="M1398 671q37-43 54 2l22 67q10 37-34 34-39-3-34-31l4-35" fill="none" stroke="#3f655f" stroke-width="8"/>
+<path d="m1397 674-11-31m63 27 5-31" stroke="#cdd8cc" stroke-width="5" fill="none"/>
+<path d="m1384 641 3 14m70-18-2 13" stroke="#4a6861" stroke-width="7" stroke-linecap="round"/>
+<circle cx="1411" cy="707" r="16" fill="#e0e3d2" stroke="#819b8e" stroke-width="5"/><circle cx="1411" cy="707" r="8" fill="#a6bdb0"/>
+<!-- Pen beside the reports. -->
+<path d="m1268 719 39 61" stroke="#3b6c64" stroke-width="7" stroke-linecap="round"/><path d="m1307 780 6 9" stroke="#e7ddc3" stroke-width="4"/>
+'''
+
+def scene(people=True, desk=True):
+    return '<svg class="scene-art" viewBox="0 0 1600 900" xmlns="http://www.w3.org/2000/svg">' + DEFS + ROOM + (WOMAN + MAN if people else '') + (DESK if desk else '') + '</svg>'
+
+def waveform(width=560, height=95, dark=True):
+    points = []
+    for x in range(0, width + 1, 2):
+        p = x % 114
+        y = 34 + 1.5 * math.sin(x / 7)
+        if 31 < p < 39: y -= 5 * math.sin((p-31)/8*math.pi)
+        elif 48 < p < 53: y += 7
+        elif 53 <= p < 57: y -= 29
+        elif 57 <= p < 62: y += 12
+        elif 77 < p < 97: y -= 7*math.sin((p-77)/20*math.pi)
+        points.append(f'{x},{y:.1f}')
+    pleth = ' '.join(f'{x},{76-9*max(0,math.sin((x%114)/114*math.pi))**3:.1f}' for x in range(0,width+1,3))
+    return f'<svg viewBox="0 0 {width} {height}" class="wave-svg"><rect width="100%" height="100%" fill="url(#ecggrid)"/><polyline points="{" ".join(points)}" stroke="#64dab1" stroke-width="2.1" fill="none" stroke-linejoin="round"/><polyline points="{pleth}" stroke="#75ced1" stroke-width="2" fill="none"/></svg>'
+
+def radar():
+    cx,cy,r=306,128,90
+    coords=lambda rad: [(cx+rad*math.sin(i*math.pi/3),cy-rad*math.cos(i*math.pi/3)) for i in range(6)]
+    pts=lambda xy:' '.join(f'{x:.1f},{y:.1f}' for x,y in xy)
+    rings=''.join(f'<polygon points="{pts(coords(r*s))}" fill="{"#eef4ed" if s==1 else "none"}" stroke="#d3dfd5" stroke-width="1"/>' for s in [1,.75,.5,.25])
+    axes=''.join(f'<path d="M{cx} {cy}L{x} {y}" stroke="#d3dfd5"/>' for x,y in coords(r))
+    vals=[.43,.73,.42,.91,.32,.38]
+    pv=[(cx+r*v*math.sin(i*math.pi/3),cy-r*v*math.cos(i*math.pi/3)) for i,v in enumerate(vals)]
+    dots=''.join(f'<circle cx="{x}" cy="{y}" r="3.5" fill="#4c9f90" stroke="#faf9ef" stroke-width="1.5"/>' for x,y in pv)
+    return f'''<svg class="radar-svg" viewBox="0 0 612 252">{rings}{axes}<polygon points="{pts(pv)}" fill="#78bbaa" fill-opacity=".27" stroke="#4a9b8b" stroke-width="2.4"/>{dots}
+      <g font-family="Microsoft YaHei" font-size="12" fill="#6d827b" font-weight="500">
+      <text x="306" y="23" text-anchor="middle">急救处置力</text>
+      <text x="407" y="81">临床时效性</text>
+      <text x="407" y="178">医患沟通感</text>
+      <text x="306" y="240" text-anchor="middle">安全规避度</text>
+      <text x="204" y="178" text-anchor="end">鉴别思维广</text>
+      <text x="204" y="81" text-anchor="end">确诊决策度</text></g></svg>'''
+
+CSS = r'''
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#c6d0bd}
+body{font-family:"Microsoft YaHei","Segoe UI",sans-serif;color:#294b48;-webkit-font-smoothing:antialiased}
+.canvas{width:1600px;height:900px;position:relative;overflow:hidden;transform-origin:top left}
+.scene-art{position:absolute;inset:0;width:1600px;height:900px}
+.icon{flex-shrink:0;vertical-align:middle;display:inline-block}
+.row{display:flex;align-items:center}.spread{display:flex;align-items:center;justify-content:space-between}.muted{color:#899a8e}.tiny{font-size:10px;letter-spacing:1.4px}.mono{font-family:Consolas,"Microsoft YaHei",monospace;font-variant-numeric:tabular-nums}.dot{width:6px;height:6px;border-radius:50%;display:inline-block;background:#58a889;box-shadow:0 0 0 3px #58a88918;margin-right:7px}
+.hud{position:absolute;left:28px;right:28px;top:23px;height:65px;display:flex;align-items:center;justify-content:space-between;padding:0 23px;background:#faf8ecf5;border:1.5px solid #c3d1bc;border-radius:17px;box-shadow:0 5px 0 #6d8d6f20,0 10px 25px #304d3d0a}
+.brand{display:flex;align-items:center;gap:12px}.brand-mark{background:#3c7769;border:1px solid #2d6258;box-shadow:inset 0 2px 0 #78a292;border-radius:12px;width:39px;height:39px;color:#f7f2d8;display:flex;align-items:center;justify-content:center}.brand-name{font-size:23px;font-weight:800;letter-spacing:-.8px}.brand-sub{font-size:11px;color:#829286;margin-top:1px;letter-spacing:1.9px}.hud-line{height:28px;width:1px;background:#d8dfcc;margin:0 22px}.hud-tag{font-size:14px;color:#668275}.hud-center{gap:26px}.timer{font-size:18px;letter-spacing:2px;font-weight:700}.hud-status{border-radius:7px;background:#e4ede0;color:#527c66;padding:7px 10px;font-size:11px}.square-button{width:34px;height:34px;border-radius:10px;border:1px solid #ced8c3;background:#f4f3e5;display:inline-flex;align-items:center;justify-content:center;color:#6e8778;margin-left:8px}
+.chapter{position:absolute;top:108px;left:45px;display:flex;align-items:center;gap:10px;color:#567864;font-size:12px}.chapter .n{font-family:Consolas;font-weight:bold;background:#7b9b7d;color:#faf8e6;border-radius:5px;padding:4px 7px}.chapter small{font-size:10px;letter-spacing:1.4px;opacity:.8}
+.speech{position:absolute;background:#fcfaef;border:2px solid #729889;border-radius:19px;padding:17px 23px 18px;box-shadow:0 7px 0 #50726016,0 10px 18px #4065520c}
+.speech:after{content:"";position:absolute;width:23px;height:24px;background:#fcfaef;border-right:2px solid #729889;border-bottom:2px solid #729889;bottom:-14px;transform:skewY(24deg) rotate(33deg)}
+.speech .speaker{font-size:12px;font-weight:bold;display:flex;align-items:center;gap:8px;margin-bottom:10px;color:#6f8c7c}.speech .speaker span{font-size:9px;letter-spacing:1.3px;font-weight:400;color:#9eab98}.speech p{font-size:19px;line-height:1.65;margin:0;letter-spacing:.1px;font-weight:500}.speech.family{left:321px;top:157px;width:396px}.speech.family:after{right:28px}.speech.patient{left:1071px;top:147px;width:455px;border-color:#567e71}.speech.patient:after{left:57px;border-color:#567e71}.speech.patient .speaker{color:#547b6b}.speech.patient p{font-size:21px}
+.status-tag{position:absolute;background:#f9f6e9ee;border:1px solid #bfcab1;border-radius:11px;padding:11px 14px;box-shadow:0 4px 14px #3149380a;min-width:154px}.status-tag .row{justify-content:space-between;gap:12px;font-size:11px;color:#6e8172}.status-tag strong{font-family:Consolas;font-size:13px;color:#527664}.status-tag .bar{height:4px;background:#dfe5d4;border-radius:4px;margin-top:8px;overflow:hidden}.status-tag .bar span{display:block;height:100%;background:#659680;border-radius:4px}.status-tag.anxiety{left:450px;top:357px}.status-tag.anxiety strong{color:#b08243}.status-tag.anxiety .bar span{background:#c99b5e}.status-tag.trust{left:1288px;top:386px}
+.patient-name{position:absolute;left:1033px;top:566px;background:#315f54ee;color:#f9f4df;border:1px solid #93b39b;border-radius:8px;padding:10px 16px;display:flex;align-items:center;gap:15px;font-size:13px;box-shadow:0 3px 6px #3b514826}.patient-name b{font-size:16px}.patient-name span{opacity:.75;font-size:11px}.scene-hint{position:absolute;left:82px;top:330px;border-radius:9px;background:#f7f5e8ed;color:#5b7d6c;font-size:12px;padding:9px 13px;border:1px solid #becdb6;display:flex;align-items:center;gap:8px}.key{font-family:Consolas;border:1px solid #b7c7ae;border-bottom-width:3px;border-radius:4px;padding:0px 4px;font-size:11px;color:#6c8574;background:#fffcef}
+.monitor-label{position:absolute;left:205px;top:629px;transform:rotate(5deg);background:#eef1dc;border:1.5px solid #739789;color:#426e5b;padding:8px 12px;border-radius:8px;font-size:13px;font-weight:bold;display:flex;gap:8px;align-items:center;box-shadow:0 3px 0 #294f491e}.object-line{position:absolute;left:576px;top:621px;display:flex;align-items:center;gap:7px;font-size:11px;color:#886d4e}.object-line span{color:#a68a62;font-size:9px;letter-spacing:2px}
+.report{position:absolute;top:666px;width:190px;height:131px;padding:12px 14px;background:#f9f5e5;border:1px solid #c8ba97;border-radius:4px;box-shadow:3px 5px 0 #f0e5cf,4px 6px 0 #baab88,8px 12px 14px #664b4127}.report .clip{position:absolute;width:39px;height:11px;left:77px;top:-6px;border:2px solid #819280;border-radius:3px;background:#a2b09a;box-shadow:inset 0 1px 0 #d9dec6}.report h4{font-size:15px;margin:3px 0 4px;display:flex;align-items:center;gap:7px}.report .subtitle{font-size:7px;color:#a8a490;letter-spacing:1.6px}.report .paper-rule{height:1px;background:#dedac4;margin:9px 0 6px}.report .paper-bottom{font-size:9px;color:#948d73;display:flex;justify-content:space-between}.report .paper-bottom span{font-size:8px;background:#e9e9d8;border-radius:3px;padding:2px 6px;color:#858e78}.report.one{left:592px;transform:rotate(-6deg)}.report.two{left:814px;top:659px;transform:rotate(3deg)}.report.three{left:1042px;top:668px;transform:rotate(-3deg)}
+.action-dock{position:absolute;left:28px;right:28px;bottom:20px;height:78px;display:flex;align-items:center;gap:9px;padding:10px 14px;background:#f8f5e9f7;border:1.5px solid #bbc9b1;border-radius:18px;box-shadow:0 6px 0 #5f745338,0 12px 26px #36423218}.dock-tab{width:102px;height:54px;display:flex;align-items:center;justify-content:center;gap:9px;border:1px solid #d4dcc6;border-bottom-width:3px;border-radius:10px;background:#f5f3e6;color:#758877;font-size:14px;font-weight:bold}.dock-tab.active{background:#477e6e;border-color:#386a5d;color:#fff9e6;box-shadow:inset 0 2px 0 #7ca191}.dock-tab small{font-family:Consolas;font-size:9px;border:1px solid #a7bead;padding:0 3px;border-radius:3px;margin-left:-4px;opacity:.7}.dock-separator{width:1px;height:34px;background:#d4ddc7;margin:0 8px}.text-input{display:flex;align-items:center;justify-content:space-between;flex:1;height:52px;background:#eeefe1;border:1px solid #d1dbc3;border-radius:10px;padding:0 16px;color:#a0ac96;font-size:13px}.send{margin-left:10px;height:51px;background:#c79959;border:1px solid #ad8148;border-bottom:3px solid #9b753e;border-radius:10px;padding:0 19px;display:flex;align-items:center;gap:9px;color:#fff7e4;font-size:14px;font-weight:700}.small-note{position:absolute;right:42px;bottom:111px;display:flex;align-items:center;gap:6px;font-size:10px;color:#8d7555}
+/* Workstation view */
+.workstation .scene-art{filter:blur(4px);transform:scale(1.025)}.workstation:after{content:"";position:absolute;inset:0;background:#344b4233;pointer-events:none;z-index:0}.computer{position:absolute;inset:23px 25px 21px;border-radius:32px;background:linear-gradient(130deg,#6b8488,#354f5c 37%,#2d4653 85%);border:3px solid #2d414b;padding:15px;box-shadow:inset 0 2px 1px #b0c0b7,0 13px 27px #1f333860;z-index:1}.computer:after{content:"";position:absolute;left:50%;bottom:7px;width:40px;height:3px;background:#728a88;border-radius:8px}.screen{width:100%;height:100%;border-radius:19px;border:2px solid #213e43;overflow:hidden;background:#e7eddf;box-shadow:0 0 0 2px #647a7a,inset 0 0 14px #2b514530;position:relative}.work-header{height:73px;background:#f8f6e8;border-bottom:1px solid #cbd8c3;display:flex;align-items:center;justify-content:space-between;padding:0 23px}.work-header .brand-name{font-size:24px}.work-header .brand-sub{font-size:9px}.work-header .hud-line{margin:0 18px}.work-title{font-size:16px;font-weight:700;color:#557866}.work-title small{display:block;font-size:9px;letter-spacing:1.5px;color:#92a18b;font-weight:400;margin-top:4px}.work-grid{position:absolute;left:18px;right:18px;top:91px;bottom:82px;display:grid;grid-template-columns:1.09fr 1fr;gap:18px}.panel{border:1.3px solid #c0cfb8;border-radius:13px;background:#fbf8ed;box-shadow:0 3px 0 #647c5410;overflow:hidden}.panel-head{height:49px;background:#f2f2e4;border-bottom:1px solid #d7dfca;display:flex;align-items:center;justify-content:space-between;padding:0 18px;color:#4b7162}.panel-title{display:flex;align-items:center;gap:9px;font-size:15px;font-weight:700}.panel-title small{color:#93a18a;font-family:Consolas;letter-spacing:1px;font-size:9px;font-weight:400;margin-left:5px}.panel-head .tiny{font-family:Consolas;letter-spacing:.6px;color:#98a18d}.patient-card{padding:18px 20px 13px}.patient-top{display:flex;align-items:center;gap:13px;margin-bottom:16px}.avatar{width:48px;height:48px;border-radius:12px;overflow:hidden;background:#dce5d5;border:1px solid #c3d1bd;position:relative}.avatar svg{position:absolute;width:100px;height:107px;left:-25px;top:0px}.patient-identity b{font-size:22px;letter-spacing:1px}.patient-identity .patient-meta{font-size:11px;color:#8c9d88;margin-top:3px}.identity-tag{margin-left:auto;font-size:10px;color:#be9259;background:#f2e7cf;border:1px solid #e8d5b2;padding:6px 9px;border-radius:5px}.record-row{display:grid;grid-template-columns:55px 1fr;gap:14px;font-size:13px;line-height:1.8;margin-top:10px}.record-row .label{color:#92a089;font-size:11px;padding-top:2px}.record-row.complaint{background:#eef1e4;border:1px solid #dde4d0;border-radius:9px;padding:12px 13px;margin-top:0;color:#526e5d}.record-row.complaint .label{color:#729079}.record-row.history{padding:0 13px}.record-row.history .value{color:#7a8e79;font-size:12px}.tabs{display:flex;padding:0 19px;gap:0;border-bottom:1px solid #d9e1cd;margin-top:2px}.tab{height:45px;display:flex;justify-content:center;gap:7px;align-items:center;flex:1;color:#91a088;font-size:13px;position:relative}.tab.active{color:#3f7c68;font-weight:700;background:#ebf0e2;border-radius:8px 8px 0 0}.tab.active:after{position:absolute;bottom:-1px;left:12px;right:12px;height:3px;border-radius:3px;background:#579780;content:""}.questions{padding:14px 19px 0}.questions-label{font-size:10px;color:#98a38d;letter-spacing:.3px;margin-bottom:9px;display:flex;justify-content:space-between}.inquiry{height:48px;border:1px solid #dce2ce;border-radius:8px;background:#f9f8ec;display:flex;align-items:center;padding:0 11px;margin-bottom:7px;gap:11px}.inquiry-num{background:#ebeedf;border:1px solid #d9e2cb;color:#91a085;font-family:Consolas;font-size:10px;width:22px;height:22px;border-radius:5px;display:flex;align-items:center;justify-content:center}.inquiry-text{font-size:12px;color:#5d7662}.inquiry-hint{font-size:9px;color:#a0aa93;margin-top:2px}.inquiry-button{margin-left:auto;display:flex;align-items:center;gap:5px;background:#ebf0e1;border:1px solid #c6d6bc;border-bottom:2px solid #c1d1b9;padding:5px 9px;border-radius:6px;font-size:10px;color:#668864}.question-entry{margin:13px 19px 0;display:flex;gap:8px}.question-entry .text-input{height:40px;font-size:11px;padding:0 12px;background:#f0f1e4}.question-entry .send{height:40px;margin-left:0;padding:0 14px;background:#507f6c;border-color:#416d5e;font-size:11px}.right-column{display:flex;flex-direction:column;gap:13px}.telemetry{height:331px;flex-shrink:0;background:#edf0e2}.telemetry .panel-head{height:43px}.telemetry .panel-head .live{font-size:9px;color:#619575}.monitor-body{background:#203d40;border:1px solid #132f34;border-radius:9px;margin:11px 12px 0;padding:10px 12px 11px;box-shadow:inset 0 1px 7px #102c3020}.wave-label{display:flex;justify-content:space-between;color:#74baa4;font-size:8px;font-family:Consolas;letter-spacing:.7px;margin-bottom:0px}.wave-svg{width:100%;height:89px;display:block}.vitals{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-top:5px}.vital{border:1px solid #416064;border-radius:6px;background:#29474a;padding:8px 9px}.vital .vital-label{font-size:9px;color:#98b7aa;display:flex;justify-content:space-between}.vital strong{font-size:27px;letter-spacing:-.5px;font-family:Consolas;color:#87dbc2;display:block;margin-top:4px;white-space:nowrap}.vital small{font-size:8px;letter-spacing:.6px;color:#769890;margin-top:2px;display:block;font-family:Consolas}.vital.bp strong{font-size:24px;color:#e4b777;padding-top:3px}.vital.pain strong{color:#e3ba79}.vital.spo strong{color:#8bd1d3}.vital strong em{font-style:normal;font-size:12px;opacity:.65}.relations{padding:11px 15px 0;display:grid;grid-template-columns:1fr 1fr;gap:22px}.relation .spread{font-size:9px;color:#839478}.relation b{font-size:11px;color:#659075;font-family:Consolas}.relation .line{height:4px;background:#d8e1cb;border-radius:3px;margin-top:7px}.relation .line span{display:block;height:100%;border-radius:3px;background:#6b9a7d}.relation.anxious b{color:#b98d50}.relation.anxious .line span{background:#c7a166}.radar-panel{flex:1;position:relative;min-height:0}.radar-panel .panel-head{height:42px}.radar-panel .panel-head .tiny{font-size:8px}.radar-svg{display:block;width:100%;height:240px;margin-top:0}.radar-legend{position:absolute;right:14px;top:51px;display:flex;gap:5px;align-items:center;font-size:8px;color:#9da48e}.radar-legend i{width:7px;height:7px;border-radius:2px;background:#88b4a2}.work-footer{position:absolute;left:19px;right:19px;bottom:14px;display:flex;align-items:center;justify-content:space-between;height:52px}.return-btn{display:flex;align-items:center;gap:9px;color:#658774;font-size:12px;background:#f6f4e7;border:1px solid #c6d3bc;border-bottom:3px solid #b6c6ad;border-radius:9px;padding:12px 17px}.footer-note{font-size:9px;color:#94a18a;margin-left:16px;letter-spacing:.3px}.main-actions{display:flex;gap:12px}.next-btn,.end-btn{display:flex;align-items:center;gap:13px;justify-content:center;height:51px;padding:0 24px;border-radius:10px;font-size:15px;font-weight:700;box-shadow:inset 0 2px 0 #ffffff24}.next-btn{background:#d2a665;border:1px solid #b88c4f;border-bottom:4px solid #a37d46;color:#fff9e8;min-width:180px}.end-btn{background:#b86c60;border:1px solid #9c584f;border-bottom:4px solid #894e45;color:#fff7e8;min-width:218px}.monitor-screw{position:absolute;width:5px;height:5px;border:1px solid #a6bab2;border-radius:50%;background:#2b4851}.monitor-screw.tl{top:9px;left:15px}.monitor-screw.tr{top:9px;right:15px}.monitor-screw.bl{bottom:9px;left:15px}.monitor-screw.br{bottom:9px;right:15px}
+'''
+
+def hud():
+    return f'''<header class="hud"><div class="row"><div class="brand"><div class="brand-mark">{icon('plus',27)}</div><div><div class="brand-name">ClinMind-AI</div><div class="brand-sub">临床模拟 · 医生的一天</div></div></div><div class="hud-line"></div><span class="hud-tag">接诊室</span></div><div class="row hud-center"><span class="row" style="gap:9px;color:#8d9b84;font-size:11px">{icon('clock',17)}抢救计时 <b class="timer" style="color:#476e5d">00:02</b></span><span class="hud-status"><i class="dot"></i>接诊中</span><div class="row"><div class="square-button">{icon('sound',17)}</div><div class="square-button">{icon('gear',17)}</div><div class="square-button">{icon('pause',17)}</div></div></div></header>'''
+
+def paper(kind,title,en):
+    if kind=='one':
+        art='<svg width="158" height="34" viewBox="0 0 158 34"><path d="M0 8h158M0 18h158M0 28h158" stroke="#e3e2cf"/><path d="M0 19h21l5-5 5 5h11l4-9 4 18 4-12 6 3h19l6-6 4 6h17l3-10 4 19 4-11 6 2h35" fill="none" stroke="#849e87" stroke-width="1.4"/></svg>'
+    elif kind=='two':
+        art='<svg width="158" height="34"><path d="M0 7h145M0 18h145M0 29h145" stroke="#d9decb"/><path d="M4 7h47M4 18h37M4 29h45" stroke="#adbba2" stroke-width="3"/><path d="M92 7h30M92 18h35M92 29h27" stroke="#c5ccaf" stroke-width="3"/></svg>'
+    else:
+        art='<svg width="158" height="34"><rect width="53" height="33" rx="2" fill="#718c7c"/><ellipse cx="27" cy="17" rx="18" ry="12" fill="#adc1a7"/><ellipse cx="26" cy="17" rx="10" ry="7" fill="#637f71"/><path d="M66 8h84M66 19h72M66 29h79" stroke="#ced5bd" stroke-width="3"/></svg>'
+    return f'<div class="report {kind}"><div class="clip"></div><h4>{icon("file",16)}{title}</h4><div class="subtitle">{en}</div><div class="paper-rule"></div>{art}<div class="paper-bottom">孙建国 · 52 岁<span>待查看</span></div></div>'
+
+def reception():
+    tabs=''.join(f'<div class="dock-tab {"active" if n==1 else ""}">{icon(ic,21)}{label}<small>{n}</small></div>' for n,(ic,label) in enumerate([('chat','问诊'),('scope','体查'),('lab','检验'),('pill','处方'),('door','转归')],1))
+    return f'''<main class="canvas reception">{scene()}{hud()}
+    <div class="chapter"><span class="n">01</span>急诊接诊 <small>/ CONSULTATION</small></div>
+    <div class="speech family"><div class="speaker">{icon('chat',15)}家属<span>FAMILY</span></div><p>他有五年高血压，具体吃什么药<br>我不太清楚。</p></div>
+    <div class="speech patient"><div class="speaker">{icon('chat',15)}孙建国<span>PATIENT</span></div><p>医生，我胸口和后背疼了三个小时，<br>还一直冒汗……</p></div>
+    <div class="status-tag anxiety"><div class="row">家属焦虑度<strong>65%</strong></div><div class="bar"><span style="width:65%"></span></div></div>
+    <div class="status-tag trust"><div class="row">患者信任度<strong>40%</strong></div><div class="bar"><span style="width:40%"></span></div></div>
+    <div class="patient-name"><b>孙建国</b><span>男 · 52 岁</span></div>
+    <div class="scene-hint">{icon('target',16)}点击桌面物品，查看检查与病历</div>
+    <div class="monitor-label">{icon('monitor',16)}打开工作站 <span class="key">E</span></div>
+    <div class="object-line">{icon('file',15)}检查资料<span>MEDICAL REPORTS</span></div>
+    {paper('one','心电图','ELECTROCARDIOGRAM')}{paper('two','检验报告','LABORATORY REPORT')}{paper('three','影像检查','MEDICAL IMAGING')}
+    <div class="small-note">{icon('shield',12)}虚拟病例 · 临床思维实训</div>
+    <div class="action-dock">{tabs}<div class="dock-separator"></div><div class="text-input">输入追问或诊疗指令……<span class="key">Enter</span></div><div class="send">发送{icon('arrow',18)}</div></div>
+    </main>'''
+
+def workstation():
+    tabs=''.join(f'<div class="tab {"active" if n==0 else ""}">{icon(ic,16)}{label}</div>' for n,(ic,label) in enumerate([('chat','问诊'),('scope','体查'),('lab','检验'),('pill','处方'),('door','转归')]))
+    qs=[('疼痛性质与放射范围','胸痛特征 · 疼痛是否向背部放射'),('起病诱因与持续时长','症状起始 · 持续时间与诱因'),('高血压病史与规律服药','既往病史 · 日常用药情况'),('伴随症状与脑灌注状态','伴随症状 · 意识与肢体活动')]
+    questions=''.join(f'<div class="inquiry"><div class="inquiry-num">0{i}</div><div><div class="inquiry-text">{name}</div><div class="inquiry-hint">{sub}</div></div><div class="inquiry-button">询问{icon("arrow",12)}</div></div>' for i,(name,sub) in enumerate(qs,1))
+    avatar='<svg viewBox="1055 280 151 199" preserveAspectRatio="xMidYMid meet">'+DEFS+MAN+'</svg>'
+    return f'''<main class="canvas workstation">{scene(False,False)}<div class="computer"><i class="monitor-screw tl"></i><i class="monitor-screw tr"></i><i class="monitor-screw bl"></i><i class="monitor-screw br"></i><div class="screen">
+    <header class="work-header"><div class="row"><div class="brand"><div class="brand-mark">{icon('plus',27)}</div><div><div class="brand-name">ClinMind-AI</div><div class="brand-sub">CLINICAL SIMULATION</div></div></div><div class="hud-line"></div><div class="work-title">临床模拟工作站<small>YOUR CLINICAL WORKSPACE</small></div></div><div class="row hud-center"><span class="row" style="gap:9px;color:#8b9a85;font-size:11px">{icon('clock',16)}抢救计时 <b class="timer" style="color:#496f5c">00:02</b></span><span class="hud-status"><i class="dot"></i>接诊中</span><div class="row"><div class="square-button">{icon('sound',17)}</div><div class="square-button">{icon('gear',17)}</div></div></div></header>
+    <div class="work-grid">
+      <section class="panel dossier"><div class="panel-head"><div class="panel-title">{icon('file',19)}病历与决策操作台<small>PATIENT DOSSIER</small></div><span class="tiny">01 / 03</span></div>
+        <div class="patient-card"><div class="patient-top"><div class="avatar">{avatar}</div><div class="patient-identity"><b>孙建国</b><div class="patient-meta">男 · 52 岁 <span style="color:#b0b8a3;margin:0 7px">|</span><span class="mono">PT-2026-0881</span></div></div><span class="identity-tag">急诊 · 胸痛</span></div>
+        <div class="record-row complaint"><span class="label">主　诉</span><div class="value">突发剧烈胸背部撕裂样疼痛 3 小时，<br>伴大汗、呼吸急促。</div></div>
+        <div class="record-row history"><span class="label">既往史</span><div class="value">高血压病史 5 年，具体用药待问诊。</div></div></div>
+        <div class="tabs">{tabs}</div><div class="questions"><div class="questions-label"><span>选择问诊方向</span><span>探索病史，完善临床判断</span></div>{questions}</div>
+        <div class="question-entry"><div class="text-input">输入追问或诊疗指令……<span class="key">Enter</span></div><div class="send">发送{icon('arrow',14)}</div></div>
+      </section>
+      <div class="right-column"><section class="panel telemetry"><div class="panel-head"><div class="panel-title">{icon('wave',19)}监护工作站<small>LIVE MONITOR</small></div><span class="live"><i class="dot"></i>实时监护 · 1 Hz</span></div>
+        <div class="monitor-body"><div class="wave-label"><span>ECG · LEAD II</span><span>25 mm/s · 10 mm/mV</span></div>{waveform()}
+        <div class="vitals"><div class="vital"><div class="vital-label">心率<span>HR</span></div><strong>109</strong><small>bpm</small></div><div class="vital bp"><div class="vital-label">血压<span>↑</span></div><strong>196/115</strong><small>mmHg</small></div><div class="vital spo"><div class="vital-label">血氧<span>SpO₂</span></div><strong>96<em> %</em></strong><small>OXYGEN</small></div><div class="vital pain"><div class="vital-label">疼痛<span>NRS</span></div><strong>9<em> / 10</em></strong><small>PAIN</small></div></div></div>
+        <div class="relations"><div class="relation"><div class="spread"><span>患者信任度</span><b>40%</b></div><div class="line"><span style="width:40%"></span></div></div><div class="relation anxious"><div class="spread"><span>家属焦虑度</span><b>65%</b></div><div class="line"><span style="width:65%"></span></div></div></div>
+      </section>
+      <section class="panel radar-panel"><div class="panel-head"><div class="panel-title">{icon('target',18)}实时思维雷达<small>REASONING RADAR</small></div><span class="tiny">OSCE · 过程评估</span></div><div class="radar-legend"><i></i>当前表现示意</div>{radar()}</section></div>
+    </div>
+    <footer class="work-footer"><div class="row"><div class="return-btn">{icon('back',17)}返回接诊<span class="key">Esc</span></div><span class="footer-note">虚拟病例 · 临床思维实训</span></div><div class="main-actions"><div class="next-btn">下一位患者{icon('arrow',18)}</div><div class="end-btn">{icon('file',19)}结案生成报告</div></div></footer>
+    </div></div></main>'''
+
+def doc(body):
+    polish = '''
+    .canvas{transform:scale(1.6)}
+    .chapter{background:#fbf8e9ed;border:1px solid #c4d0b9;padding:5px 9px;border-radius:8px;top:106px;left:38px}
+    .avatar svg{width:48px;height:48px;left:0;top:0}
+    .panel-title{font-size:16px}.record-row{font-size:15px;line-height:1.65}
+    .record-row.history .value{font-size:13px}.record-row .label{font-size:12px}
+    .inquiry{height:51px}.inquiry-text{font-size:13px;color:#526c58}
+    .inquiry-hint{font-size:9.5px;color:#89967d}.inquiry-button{font-size:11px}
+    .questions-label{color:#839278}.vital strong{font-size:30px}.vital.bp strong{font-size:26px}
+    .vital .vital-label{font-size:10px}.relation .spread{font-size:10px}
+    .question-entry .text-input{font-size:12px}.radar-legend{font-size:9px;color:#869378}
+    '''
+    return '<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>ClinMind-AI UI concept</title><style>'+CSS+polish+'</style><body>'+body+'</body></html>'
+
+def main():
+    specs=[('01-接诊场景', reception()), ('02-电脑工作站', workstation())]
+    for name, content in specs:
+        file=ROOT/(name+'.html')
+        file.write_text(doc(content),encoding='utf-8')
+        png=ROOT/(name+'.png')
+        with tempfile.TemporaryDirectory(prefix='clinmind-ui-chrome-') as profile:
+            command=[str(CHROME),'--headless=new','--disable-gpu','--hide-scrollbars','--no-first-run','--no-default-browser-check','--disable-extensions','--disable-background-networking','--disable-component-update','--disable-sync',f'--user-data-dir={profile}','--window-size=2560,1440','--force-device-scale-factor=1','--allow-file-access-from-files','--run-all-compositor-stages-before-draw','--virtual-time-budget=1500',f'--screenshot={png}',file.as_uri()]
+            proc=subprocess.run(command,capture_output=True,timeout=60,creationflags=subprocess.CREATE_NO_WINDOW)
+            if proc.returncode != 0 or not png.exists():
+                raise RuntimeError(f'Rendering failed for {name}: '+proc.stderr.decode('utf-8',errors='replace')[-1500:])
+        from PIL import Image
+        with Image.open(png) as im:
+            if im.size != (2560,1440):
+                raise RuntimeError(f'Unexpected size: {im.size}')
+            im.convert('RGB').resize((1600,900),Image.Resampling.LANCZOS).save(ROOT/(name+'-preview.jpg'),quality=92)
+        print(f'Created: {png} ({png.stat().st_size:,} bytes)',flush=True)
+
+if __name__=='__main__':
+    main()

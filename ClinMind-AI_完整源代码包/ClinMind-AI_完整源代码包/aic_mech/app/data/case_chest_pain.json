@@ -1,0 +1,160 @@
+{
+  "case_id": "case_chest_pain_001",
+  "title": "生死时速：突发撕裂样胸痛背后的致命陷阱 (Stanford A型主动脉夹层)",
+  "difficulty": "国家级学科竞赛 (Hard / High Stakes)",
+  "chief_complaint": "突发剧烈胸背部撕裂样疼痛伴大汗淋漓3小时",
+  "category": "急诊心血管胸痛三联征",
+  "patient_profile": {
+    "name": "孙建国",
+    "gender": "男",
+    "age": 52,
+    "occupation": "民营建筑企业负责人",
+    "past_history": "原发性高血压病史10年，最高血压曾达 200/115 mmHg。日常服药依从性极差，常自行漏服降压药；近2周因赶工期极度疲劳且擅自停药。",
+    "family_companion": "妻子（李秀梅，50岁，极度焦虑紧张）"
+  },
+  "initial_vitals": {
+    "hr": 108.0,
+    "sbp": 195.0,
+    "dbp": 115.0,
+    "spo2": 96.0,
+    "rr": 22.0,
+    "pain_vas": 9,
+    "ecg_rhythm": "Sinus Tachycardia (窦性心动过速)",
+    "consciousness": "神志清楚，痛苦面容，大汗淋漓，烦躁不安"
+  },
+  "physical_exam_findings": {
+    "vitals_bilateral_bp": {
+      "title": "四肢血压对比测量",
+      "right_arm": "195/115 mmHg",
+      "left_arm": "162/98 mmHg",
+      "difference": "双侧上臂收缩压差 33 mmHg (>20 mmHg，强阳性指征！)",
+      "interpretation": "双上肢血压明显不对称，高度提示主动脉弓分支受夹层累及或血流受阻！"
+    },
+    "heart_auscultation": {
+      "title": "心脏查体与瓣膜听诊",
+      "findings": "心率108次/分，心律齐。胸骨右缘第2肋间（主动脉瓣听诊区）可闻及 3/6 级舒张期泼水样/叹气样杂音，向心尖部传导。心音稍低钝，未闻及心包摩擦音。",
+      "interpretation": "新出现的舒张期杂音高度提示升主动脉根部夹层撕裂导致急性主动脉瓣关闭不全！"
+    },
+    "lung_auscultation": {
+      "title": "双肺听诊",
+      "findings": "双肺呼吸音粗，双下肺未闻及湿性啰音及哮鸣音，胸膜摩擦音阴性。"
+    },
+    "abdomen_exam": {
+      "title": "腹部及血管杂音查体",
+      "findings": "腹部平软，剑突下及全腹无压痛、反跳痛及肌紧张。腹主动脉区搏动稍减弱，未扪及搏动性包块，未闻及血管杂音。"
+    },
+    "peripheral_pulses": {
+      "title": "周围血管征与搏动触诊",
+      "findings": "右侧桡动脉搏动洪大有力，左侧桡动脉搏动显著弱于对侧；双侧股动脉及足背动脉搏动对称存在。"
+    },
+    "neuro_exam": {
+      "title": "神经系统快速检查",
+      "findings": "双侧瞳孔等大等圆(3.0mm)，对光反射存在。四肢肌力5级，肌张力正常，双侧巴氏征(Babinski)阴性。颈软无抵抗。"
+    }
+  },
+  "lab_and_imaging_reports": {
+    "ecg_18_lead": {
+      "item_name": "床旁18导联同步心电图",
+      "modality": "ECG",
+      "report_time_seconds": 60,
+      "parameters": {
+        "heart_rate": 105,
+        "p_r_interval": "158 ms",
+        "qrs_duration": "92 ms",
+        "qt_qtc": "390/460 ms"
+      },
+      "conclusion": "1. 窦性心动过速；2. 左心室高电压伴ST-T改变（V5-V6 ST段水平型压低 0.05-0.10 mV）；3. 无典型STEMI特征性弓背向上抬高，未见病理性Q波。",
+      "clinical_hint": "不支持典型急性ST段抬高型心肌梗死(STEMI)，切忌先入为主误开双抗与溶栓！"
+    },
+    "hs_ctni": {
+      "item_name": "急诊高敏心肌钙蛋白I (hs-cTnI)",
+      "modality": "LAB",
+      "report_time_seconds": 180,
+      "result": "0.038 ng/mL",
+      "ref_range": "0.000 - 0.040 ng/mL",
+      "status": "NORMAL_HIGHLIMIT",
+      "conclusion": "肌钙蛋白处于参考值高限临界区，未达心肌梗死3-5倍以上诊断阈值。"
+    },
+    "d_dimer": {
+      "item_name": "急诊D-二聚体定量检测 (D-Dimer)",
+      "modality": "LAB",
+      "report_time_seconds": 150,
+      "result": "8.85 mg/L FEU",
+      "ref_range": "0.00 - 0.50 mg/L FEU",
+      "status": "CRITICAL_HIGH",
+      "conclusion": "D-二聚体急剧升高达参考上限 17 倍以上！强烈提示体内存在急性大血管内膜广泛撕裂或血栓形成过程！"
+    },
+    "bedside_echo": {
+      "item_name": "急诊床旁心脏超声心动图 (POCUS-Echo)",
+      "modality": "ULTRASOUND",
+      "report_time_seconds": 120,
+      "findings": [
+        "升主动脉根部内径明显扩张增宽，内径约 46 mm；",
+        "升主动脉腔内见摆动的线样低回声内膜撕裂剥离片，真假腔分离；",
+        "主动脉瓣中度反流 (AR jet area / LVO > 30%)；",
+        "左心室收缩功能尚可，LVEF 58%；",
+        "心包腔内探及少量无回声区：左室后壁后方深约 4.5 mm，心尖部深约 3.0 mm（提示少量心包积血/积液）。"
+      ],
+      "conclusion": "升主动脉夹层（Stanford A型可能），伴主动脉瓣中度关闭不全及少量心包积血。"
+    },
+    "aortic_cta": {
+      "item_name": "急诊胸腹主动脉全长增强CT血管成像 (Aorta CTA)",
+      "modality": "IMAGING",
+      "report_time_seconds": 300,
+      "findings": [
+        "升主动脉、主动脉弓及降主动脉全长可见广泛内膜剥脱撕裂撕移片，形成真假两腔；",
+        "第一原发破口位于主动脉根部冠状动脉窦管交界上方约 12 mm 处，呈螺旋样向上延伸累及头臂干起始部；",
+        "假腔明显扩张压迫真腔，真腔呈裂隙样变细；",
+        "冠状动脉右冠开口临近撕裂边缘受累；左锁骨下动脉起始部真腔轻度受压；",
+        "心包窦见少量高密度积液影（CT值约 45 HU，考虑积血）。"
+      ],
+      "conclusion": "Stanford A型（DeBakey I型）急性主动脉夹层，累及头臂干，伴少量心包积血及主动脉根部扩张！危急重症，极高破裂风险！"
+    },
+    "routine_blood": {
+      "item_name": "急诊血常规 (CBC)",
+      "modality": "LAB",
+      "report_time_seconds": 120,
+      "result": "WBC 11.8×10^9/L (中性粒 79%), Hb 132 g/L, PLT 215×10^9/L",
+      "ref_range": "WBC (3.5-9.5), Hb (130-175), PLT (125-350)",
+      "status": "MILD_ELEVATED"
+    },
+    "coagulation": {
+      "item_name": "急诊凝血四项 (Coagulation Profile)",
+      "modality": "LAB",
+      "report_time_seconds": 180,
+      "result": "PT 12.3s, INR 1.05, APTT 32.1s, FIB 3.4 g/L",
+      "ref_range": "PT (11-14s), INR (0.8-1.2), APTT (28-42s), FIB (2-4g/L)",
+      "status": "NORMAL"
+    }
+  },
+  "dialogue_scripts": {
+    "patient": {
+      "pain_expression": [
+        "大夫……我胸口像被人生生用刀划开劈裂一样！后背也疼得像要炸开了！",
+        "疼死我了……气……气喘不上来，浑身冒冷汗……救命啊医生！",
+        "别碰我后背……一按更疼得厉害！"
+      ],
+      "trust_low": "你们到底行不行啊？！怎么还在问这问那……赶紧先给我打一针止痛针啊！",
+      "trust_high": "大夫，我听您的！我全听您的！您一定要救救我……",
+      "bp_controlled": "呼……大夫，这药打进去好像……胸口那股撕扯的剧痛稍微轻了一点点了，没刚才那么像要炸裂了……"
+    },
+    "family": {
+      "anxious": "大夫！我爱人到底是怎么了？！他平时身体好好的，怎么突然疼成这样？！是不是心肌梗死啊？电视上都说胸痛要含阿司匹林或者硝酸甘油，你们怎么还不给吃？！",
+      "interruption": "医生！别查了别查了，再查人就没了！快推去抢救室用最好的药啊！要不要转院？！",
+      "cooperative": "好的医生，只要能救老孙，要办什么手续、签什么字我们都配合！钱不是问题，求您全力救救他！",
+      "critical_consent": "心胸外科急诊开胸手术？！死亡率这么高……（泣不成声）……大夫，我们签！我们相信医院，求你们救救建国！"
+    },
+    "nurse": {
+      "order_executed": "收到医嘱！已立即执行：{order_name}。",
+      "alarm_bp_high": "【危急值报警】孙建国收缩压升至 {sbp} mmHg！舒张压 {dbp} mmHg！心率 {hr} bpm！患者极其烦躁！",
+      "alarm_contraindication": "【护士警觉拦截】王大夫，您下达了【{drug_name}】？！患者双侧上臂血压压差巨大、胸痛呈撕裂样，心肌酶并未成倍升高！这高度疑似大血管病变，一旦抗凝溶栓会大出血猝死的！您确定还要强制推注吗？！",
+      "alarm_tamponade": "【危急恶化警报】患者突发意识模糊、脉搏扪及不清！心电监护显示收缩压骤降至 {sbp} mmHg！颈静脉重度怒张！心包填塞征象明显！需要立即心肺复苏！"
+    }
+  },
+  "hemodynamic_rules": {
+    "target_hr_range": [60, 75],
+    "target_sbp_range": [100, 120],
+    "lethal_rupture_countdown_seconds": 120,
+    "uncontrolled_crisis_timeout_seconds": 300
+  }
+}

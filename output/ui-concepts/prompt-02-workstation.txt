@@ -1,0 +1,20 @@
+Use case: ui-mockup
+Asset type: one polished, widescreen 16:9 game UI concept image for the same ClinMind-AI clinical simulation game as the reception image.
+
+Reference roles: User sketch 2 is the primary layout reference; the finished reception concept or user sketch 1 supplies environmental continuity; the existing website screenshot supplies actual interface terminology and simulated case data. Produce one workstation close-up, not a collage.
+
+Composition: the desktop computer from the reception scene, now viewed straight on in close-up, occupying approximately 94 percent of the image width and height. Thick but restrained deep blue rounded monitor housing with a soft bevel. Screen plane is frontal and rectangular for excellent UI readability, no exaggerated perspective. Only a narrow softly blurred margin of the same teal hospital room and warm desk remains visible around the monitor. The computer is the main screen, not a tiny monitor inside a large room.
+
+Style continuity: premium 2.5D illustrated game UI, teal and navy frames, warm ivory dossier cards, slate dark telemetry, subtle shadows, restrained amber and coral red action buttons. Crisp readable Chinese interface, generous spacing, clear information hierarchy, consistent panel borders and rounded corners. No browser chrome, photorealistic people, futuristic holograms, ornamental RPG inventory or unrelated widgets.
+
+Screen architecture: compact top HUD; LEFT column approximately 54 percent width contains 病历与决策操作台; RIGHT column approximately 42 percent contains 监护工作站 at top and 实时思维雷达 below; bottom footer contains 返回接诊 on the left and two prominent separate buttons on the right: amber 下一位患者 and coral red 结案生成报告. Preserve all main modules and both main actions from sketch 2.
+
+Top HUD exact text: ClinMind-AI, 临床模拟工作站, 抢救计时 00:02, 接诊中. Include small unobtrusive sound and settings icons.
+
+LEFT dossier: heading 病历与决策操作台. Patient header 孙建国, 男 · 52 岁, PT-2026-0881. Main complaint card: 主诉; 突发剧烈胸背部撕裂样疼痛 3 小时，伴大汗、呼吸急促。 History card: 既往史; 高血压病史 5 年，具体用药待问诊。 Five tabs 问诊, 体查, 检验, 处方, 转归, with 问诊 selected. Below, four compact inquiry cards: 疼痛性质与放射范围; 起病诱因与持续时长; 高血压病史与规律服药; 伴随症状与脑灌注状态. Each gets a small 询问 button. Bottom text input 输入追问或诊疗指令…… and 发送. Clean separation, no text overflow.
+
+RIGHT upper panel: heading 监护工作站. Dark clinical monitor with green ECG trace and cyan plethysmography trace. Clearly legible 2-by-2 readings: 心率 109 bpm, 血压 196/115 mmHg, 血氧 96%, 疼痛 9/10. Use amber or coral accents for high blood pressure and pain; do not mark them normal. Beneath telemetry show two slim status bars: 患者信任度 40%, 家属焦虑度 65%.
+
+RIGHT lower panel: heading 实时思维雷达. Large clean six-axis radar chart with subtle concentric polygon grid and translucent cyan filled shape. Axis labels correspond to the original UI, clockwise starting at top: 急救处置力, 临床时效性, 医患沟通感, 安全规避度, 鉴别思维广, 确诊决策度. Use enough space for all six labels. Do not invent numerical scores.
+
+Constraints: preserve the supplied patient's name, age, complaint, history, four telemetry values and two status percentages across the two images. Render short Chinese labels exactly. Do not invent diagnoses, medication doses or new findings. Buttons should look actionable with distinct silhouettes. This is a finished visual UI concept, not source code or a wireframe.
