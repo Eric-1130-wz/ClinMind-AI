@@ -145,8 +145,9 @@ class TestHiddenHistoryUnlockEvolution(unittest.TestCase):
         self.agent = AgentEngine()
 
     def test_subcritical_trust_locks_hidden_history(self):
-        """When trust is subcritical (<0.35), patient and family withhold key details."""
-        self.agent.state.patient_trust = 0.20
+        """When trust is subcritical (<0.50), patient and family withhold key details."""
+        # Initial trust is 0.40, i.e. already subcritical against the 0.50 gate.
+        self.assertLess(self.agent.state.patient_trust, 0.50)
         dialogues = self.agent.handle_inquiry("请问您平时有高血压吗？平时吃药规律吗？")
         texts = " ".join([d.text for d in dialogues])
         # Hidden golden details (200/115, 停药两周) must NOT be fully revealed by patient
@@ -154,12 +155,12 @@ class TestHiddenHistoryUnlockEvolution(unittest.TestCase):
         self.assertNotIn("赶工程进度，天天熬夜加班，还擅自把降压药全停了", texts)
 
     def test_supercritical_trust_unlocks_hidden_history(self):
-        """Empathy increases trust past 0.35 threshold, unlocking complete hidden history."""
-        # Starting trust is 0.40, empathy increases it
+        """Empathy increases trust past the 0.50 threshold, unlocking complete hidden history."""
+        # Starting trust is 0.40, a single empathy round (+0.15) crosses the gate.
         init_trust = self.agent.state.patient_trust
         _ = self.agent.handle_inquiry("大爷别紧张，我们马上给您镇痛和控制血压，全力救治！")
         self.assertGreater(self.agent.state.patient_trust, init_trust)
-        self.assertGreaterEqual(self.agent.state.patient_trust, 0.35)
+        self.assertGreaterEqual(self.agent.state.patient_trust, 0.50)
 
         # Now inquire regarding hypertension
         dialogues = self.agent.handle_inquiry("大爷，您以前有高血压病史吗？平时吃药情况怎么样？")

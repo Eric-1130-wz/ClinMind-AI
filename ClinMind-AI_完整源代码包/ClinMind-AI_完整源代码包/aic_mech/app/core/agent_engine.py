@@ -127,7 +127,8 @@ class AgentEngine:
 
         # 4. 问高血压病史与服药遵从度 (金标准节点 N3)
         if any(k in q for k in ["高血压", "服药", "停药", "降压药", "平时血压", "吃什么药", "既往史", "病史"]):
-            if self.state.patient_trust >= 0.35:
+            # 解锁门槛须高于初始信任 0.40，否则同理心博弈机制形同虚设（文档口径：≥50 解锁）。
+            if self.state.patient_trust >= 0.50:
                 messages.append(DialogueMessage(
                     speaker="patient",
                     text="我……我有高血压十年了，最高量过 200/115！平时嫌吃药麻烦经常漏服……最近赶工期这两周擅自停药了……",
