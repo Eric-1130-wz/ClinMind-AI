@@ -52,10 +52,6 @@ class PhysiologyEngine:
         """Get the current hemodynamic vitals vector."""
         return self.vitals
 
-    def get_state(self) -> PatientStateEnum:
-        """Get current patient physiological state."""
-        return self.state
-
     def apply_medication(self, drug_name: str, dose: float = 1.0, unit: str = "mg") -> Dict[str, Any]:
         """Apply a medication order to the hemodynamic system."""
         normalized_name = drug_name.strip().lower()
@@ -227,7 +223,7 @@ class PhysiologyEngine:
         """Evaluate if criteria for S2_PHARMACO_CONTROLLED are satisfied."""
         if self.state in [
             PatientStateEnum.S3_PERICARDIAL_EFFUSION,
-            PatientStateEnum.S4_CARAC_TAMPONADE if hasattr(PatientStateEnum, "S4_CARAC_TAMPONADE") else PatientStateEnum.S4_CARDIAC_TAMPONADE,
+            PatientStateEnum.S4_CARDIAC_TAMPONADE,
             PatientStateEnum.S5_AORTIC_RUPTURE,
             PatientStateEnum.S6_CARDIAC_ARREST
         ]:

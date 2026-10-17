@@ -80,6 +80,28 @@ def is_online_llm_active() -> bool:
 
 USE_ONLINE_LLM: bool = is_online_llm_active()
 
+def _write_env_file(managed: dict) -> None:
+    """Rewrite .env updating only the managed LLM keys.
+
+    Lines the LLM config does not own (HOST / PORT / DEBUG / custom entries)
+    are preserved verbatim so toggling providers never silently drops them.
+    """
+    managed = {k.upper(): v for k, v in managed.items()}
+    kept = []
+    if ENV_FILE.exists():
+        with open(ENV_FILE, "r", encoding="utf-8") as f:
+            for line in f:
+                stripped = line.strip()
+                if stripped and not stripped.startswith("#") and "=" in stripped:
+                    key = stripped.split("=", 1)[0].strip().upper()
+                    if key in managed:
+                        continue
+                kept.append(line.rstrip("\n"))
+    lines = ["# ClinMind-AI Configuration"] + kept + [f"{k}={v}" for k, v in managed.items()]
+    with open(ENV_FILE, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+
+
 def save_llm_config(provider: str, api_key: str, base_url: str = "", model: str = "", *, connection_tested: bool = False, connection_ok=None, connection_message: str = ""):
     """Dynamically save LLM settings to .env and reload in-memory variables."""
     global LLM_PROVIDER, OPENAI_API_KEY, OPENAI_BASE_URL, DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, LLM_MODEL, USE_ONLINE_LLM, ONLINE_LLM_ENABLED, LLM_CONNECTION_OK, LLM_CONNECTION_TESTED_AT, LLM_CONNECTION_MESSAGE
@@ -120,19 +142,16 @@ def save_llm_config(provider: str, api_key: str, base_url: str = "", model: str 
         ONLINE_LLM_ENABLED = False
         USE_ONLINE_LLM = False
         LLM_MODEL = "offline-rule-engine"
-        env_lines = [
-            "# ClinMind-AI Configuration",
-            "USE_OFFLINE_ONLY=true",
-            "USE_ONLINE_LLM=false",
-            "LLM_PROVIDER=offline",
-            "LLM_MODEL=offline-rule-engine",
-            "LLM_CONNECTION_OK=",
-            "LLM_CONNECTION_TESTED_AT=",
-            "LLM_CONNECTION_MESSAGE=离线模式，无需连接测试",
-        ]
         try:
-            with open(ENV_FILE, "w", encoding="utf-8") as f:
-                f.write("\n".join(env_lines) + "\n")
+            _write_env_file({
+                "USE_OFFLINE_ONLY": "true",
+                "USE_ONLINE_LLM": "false",
+                "LLM_PROVIDER": "offline",
+                "LLM_MODEL": "offline-rule-engine",
+                "LLM_CONNECTION_OK": "",
+                "LLM_CONNECTION_TESTED_AT": "",
+                "LLM_CONNECTION_MESSAGE": "离线模式，无需连接测试",
+            })
         except Exception as e:
             return False, f"写入本地配置失败: {e}"
         return True, "已切换为纯离线高仿真规则引擎模式 (免Key 100%全保真)"
@@ -142,24 +161,21 @@ def save_llm_config(provider: str, api_key: str, base_url: str = "", model: str 
     ONLINE_LLM_ENABLED = True
     USE_ONLINE_LLM = is_online_llm_active()
 
-    # Write to .env
-    env_lines = [
-        "# ClinMind-AI Configuration",
-        "USE_OFFLINE_ONLY=false",
-        "USE_ONLINE_LLM=true",
-        f"LLM_PROVIDER={LLM_PROVIDER}",
-        f"DEEPSEEK_API_KEY={DEEPSEEK_API_KEY}",
-        f"DEEPSEEK_BASE_URL={DEEPSEEK_BASE_URL}",
-        f"OPENAI_API_KEY={OPENAI_API_KEY}",
-        f"OPENAI_BASE_URL={OPENAI_BASE_URL}",
-        f"LLM_MODEL={LLM_MODEL}",
-        f"LLM_CONNECTION_OK={'true' if LLM_CONNECTION_OK is True else 'false' if LLM_CONNECTION_OK is False else ''}",
-        f"LLM_CONNECTION_TESTED_AT={LLM_CONNECTION_TESTED_AT}",
-        f"LLM_CONNECTION_MESSAGE={LLM_CONNECTION_MESSAGE}",
-    ]
+    # Write to .env (preserving unrelated keys such as HOST/PORT/DEBUG)
     try:
-        with open(ENV_FILE, "w", encoding="utf-8") as f:
-            f.write("\n".join(env_lines) + "\n")
+        _write_env_file({
+            "USE_OFFLINE_ONLY": "false",
+            "USE_ONLINE_LLM": "true",
+            "LLM_PROVIDER": LLM_PROVIDER,
+            "DEEPSEEK_API_KEY": DEEPSEEK_API_KEY,
+            "DEEPSEEK_BASE_URL": DEEPSEEK_BASE_URL,
+            "OPENAI_API_KEY": OPENAI_API_KEY,
+            "OPENAI_BASE_URL": OPENAI_BASE_URL,
+            "LLM_MODEL": LLM_MODEL,
+            "LLM_CONNECTION_OK": "true" if LLM_CONNECTION_OK is True else "false" if LLM_CONNECTION_OK is False else "",
+            "LLM_CONNECTION_TESTED_AT": LLM_CONNECTION_TESTED_AT,
+            "LLM_CONNECTION_MESSAGE": LLM_CONNECTION_MESSAGE,
+        })
     except Exception as e:
         print(f"Error persisting .env: {e}")
         return False, f"写入本地配置失败: {e}"

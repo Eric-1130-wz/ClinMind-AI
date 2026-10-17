@@ -212,12 +212,13 @@ class TestDualTrackGraphRAGGuardrailRobustness(unittest.TestCase):
         self.assertTrue(any(kw in str(cta) for kw in ["第一原发破口", "内膜剥脱撕裂", "真假两腔"]))
         self.assertTrue("心包" in str(cta) and "积血" in str(cta))
 
-        # Fictitious test does NOT hallucinate aortic findings and returns safe fallback
+        # Fictitious test must NOT hallucinate any values (including "normal"):
+        # the guardrail refuses to fabricate results for unconfigured items.
         matched_fake, fake_res, _ = self.guard.route_lab_or_imaging("全身PET-CT纳米分子显影检查")
         self.assertFalse(matched_fake)
         self.assertIsNotNone(fake_res)
-        self.assertEqual(fake_res.get("status"), "NORMAL")
-        self.assertIn("正常参考范围", str(fake_res))
+        self.assertEqual(fake_res.get("status"), "NOT_CONFIGURED")
+        self.assertIn("未配置", str(fake_res))
 
     def test_critical_value_alert_and_ecg_differentiation(self):
         """D-Dimer returns extreme critical value; 18-lead ECG excludes acute STEMI."""

@@ -30,6 +30,7 @@ class ClinMindApp {
     this.actionCount = 0;
     this.elapsedSeconds = 0;
     this.timerInterval = null;
+    this._lastCriticalAlarmAt = 0;
 
     this.init();
   }
@@ -47,6 +48,15 @@ class ClinMindApp {
     if (window.dagViewManager) {
       window.dagViewManager.initMiniRadar('miniRadarContainer');
     }
+
+    // 浏览器音频自动播放策略要求用户手势：首次任意点击/按键时解锁 AudioContext
+    const unlockAudio = () => {
+      if (window.monitorAudio) window.monitorAudio.unlock();
+      document.removeEventListener('pointerdown', unlockAudio);
+      document.removeEventListener('keydown', unlockAudio);
+    };
+    document.addEventListener('pointerdown', unlockAudio);
+    document.addEventListener('keydown', unlockAudio);
 
     // 默认装载并渲染首个 Tab (问诊) 的高频临床快捷指令
     this.renderQuickActions('inquiry');
@@ -556,7 +566,7 @@ class ClinMindApp {
     if (payload.rupture_countdown !== null && payload.rupture_countdown > 0) {
       if (countdownBox) countdownBox.classList.remove('hidden');
       if (countdownVal) countdownVal.innerText = `${Math.ceil(payload.rupture_countdown)}s`;
-      if (window.monitorAudio) window.monitorAudio.playCriticalAlarm();
+      this.maybePlayCriticalAlarm();
     } else {
       if (countdownBox) countdownBox.classList.add('hidden');
     }
@@ -573,10 +583,21 @@ class ClinMindApp {
       });
     }
 
-    // High blood pressure alarm
-    if (sbpVal >= 190 && window.monitorAudio && Math.random() < 0.2) {
-      window.monitorAudio.playCriticalAlarm();
+    // 危急警报以后端 alarms 通道为权威信号源（替代前端按 SBP 阈值+随机的
+    // 自行推断——初始 S0 高血压状态不应每几秒随机触发"致命警报"）。
+    if (Array.isArray(payload.alarms) && payload.alarms.length > 0) {
+      this.maybePlayCriticalAlarm();
     }
+  }
+
+  /**
+   * Critical alarm with a 3s cool-down: 1Hz 遥测下避免每秒连续轰炸造成警报疲劳。
+   */
+  maybePlayCriticalAlarm() {
+    const now = performance.now();
+    if (now - this._lastCriticalAlarmAt < 3000) return;
+    this._lastCriticalAlarmAt = now;
+    if (window.monitorAudio) window.monitorAudio.playCriticalAlarm();
   }
 
   handleCustomActionSubmit() {
@@ -698,6 +719,10 @@ class ClinMindApp {
     `;
 
     stream.appendChild(div);
+    // 长会话防 DOM 无限增长：超过 200 条时移除最旧记录
+    while (stream.children.length > 200) {
+      stream.removeChild(stream.firstChild);
+    }
     stream.scrollTop = stream.scrollHeight;
   }
 
@@ -716,6 +741,10 @@ class ClinMindApp {
       <div class="text-slate-900 font-medium text-xs leading-relaxed select-text">${escapeHtml(text)}</div>
     `;
     stream.appendChild(div);
+    // 长会话防 DOM 无限增长：超过 200 条时移除最旧记录
+    while (stream.children.length > 200) {
+      stream.removeChild(stream.firstChild);
+    }
     stream.scrollTop = stream.scrollHeight;
   }
 

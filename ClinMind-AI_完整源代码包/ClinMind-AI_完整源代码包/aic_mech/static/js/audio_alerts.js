@@ -28,6 +28,15 @@ class MonitorAudioAlerts {
     return this.isMuted;
   }
 
+  /**
+   * Call from a user gesture (pointerdown/keydown) to satisfy browser
+   * autoplay policies — without it the first beeps/alarms stay silent.
+   */
+  unlock() {
+    this._initContext();
+    return !!(this.audioCtx && this.audioCtx.state === 'running');
+  }
+
   setVolume(value) {
     const numeric = Number(value);
     if (Number.isFinite(numeric)) this.volume = Math.max(0, Math.min(1, numeric));

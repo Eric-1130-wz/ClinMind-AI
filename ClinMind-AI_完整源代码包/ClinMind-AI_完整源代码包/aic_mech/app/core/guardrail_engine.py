@@ -35,7 +35,11 @@ class GuardrailEngine:
         q = query.strip().lower()
 
         # 1. Bilateral Upper-Arm Blood Pressure (Critical Gold Node N5)
-        if any(k in q for k in ["双侧", "双上肢", "左侧血压", "右侧血压", "双臂", "对侧血压", "压差", "量双上臂", "肢体血压"]) or ("双侧" in q and "血压" in q):
+        # 裸关键词"双侧"会误吞其他部位的查体（如双侧瞳孔、双下肢血压），
+        # 仅在明确指向上肢/臂部/双侧血压且不属于其他查体区域时命中。
+        if any(k in q for k in ["双上肢", "左侧血压", "右侧血压", "双臂", "对侧血压", "压差", "量双上臂", "肢体血压"]) or (
+            "双侧" in q and "血压" in q and not any(x in q for x in ["瞳孔", "下肢", "足", "腘", "肺", "呼吸音"])
+        ):
             finding = self.physical_findings.get("vitals_bilateral_bp", {})
             msg = (
                 f"【双侧上肢血压对比测量】\n"
@@ -81,7 +85,7 @@ class GuardrailEngine:
             return True, finding, msg
 
         # Generic physical examination fallback
-        return False, None, "已进行系统性体查，未发现明显新增阳性体征。建议进行针对性专科查体（如双上肢血压、心脏瓣膜听诊）。"
+        return False, None, "本病例未配置该项查体的确定性结果（防幻觉护栏拒绝编造查体所见）。建议进行针对性专科查体（如双上肢血压、心脏瓣膜听诊）。"
 
     def route_lab_or_imaging(self, order_name: str, current_vitals: Optional[Any] = None) -> Tuple[bool, Optional[Dict[str, Any]], str]:
         """Match lab test or imaging request to authenticated hospital diagnostic report.
@@ -170,11 +174,13 @@ class GuardrailEngine:
             )
             return True, rep, msg
 
-        # Unmatched routine test
+        # Unmatched routine test: 防幻觉护栏不允许编造"正常"结果——
+        # 未收录的检查项目必须诚实回绝，提示学员开立病例支持的检查。
         default_rep = {
             "item_name": order_name,
             "modality": "LAB",
-            "result": "指标处于正常参考范围内",
-            "status": "NORMAL"
+            "result": "本病例未配置该项检查的确定性数据",
+            "conclusion": "防幻觉护栏：该项检查未收录，拒绝编造检验数值",
+            "status": "NOT_CONFIGURED"
         }
-        return False, default_rep, f"【检查回报】开具【{order_name}】未见明显异常或特异性病理指征。"
+        return False, default_rep, f"【检查回报】开具【{order_name}】：本病例未配置该项检查的确定性报告（护栏拒绝编造结果）。请开立本病例已有金标准数据支持的检查项目。"
