@@ -47,11 +47,12 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # CORS Middleware
+    # CORS Middleware: UI 与 API 同源部署且不使用 cookie 凭证；
+    # allow_origins=["*"] 与 allow_credentials=True 的组合违反 CORS 规范。
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
-        allow_credentials=True,
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )

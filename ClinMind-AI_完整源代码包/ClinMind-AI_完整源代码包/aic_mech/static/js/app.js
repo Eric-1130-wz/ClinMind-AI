@@ -4,17 +4,33 @@
  * monitor status indicators, and OSCE assessment modal displays.
  */
 
+/**
+ * Escape untrusted text (LLM dialogue, user input, backend-reflected strings)
+ * before it is placed into any HTML template. All innerHTML rendering of
+ * dynamic content MUST go through this helper.
+ */
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 class ClinMindApp {
   constructor() {
     this.sessionId = 'default';
     this.caseId = 'case_chest_pain_001';
     this.studentName = '参赛精英医师';
     this.ws = null;
+    this.wsRetryCount = 0;
     this.ecgRenderer = null;
     this.currentTab = 'inquiry';
     this.actionCount = 0;
     this.elapsedSeconds = 0;
     this.timerInterval = null;
+    this._lastCriticalAlarmAt = 0;
 
     this.init();
   }
@@ -23,15 +39,24 @@ class ClinMindApp {
     this.setupEventListeners();
     this.setupQuickButtons();
 
-    // Initialize Canvas ECG
+    // Initialize Canvas ECG (main trace + respiration trace)
     if (window.ECGCanvasRenderer) {
-      this.ecgRenderer = new window.ECGCanvasRenderer('ecgCanvas');
+      this.ecgRenderer = new window.ECGCanvasRenderer('ecgCanvas', 'respiratoryCanvas');
     }
 
     // Initialize mini radar (绑定正确容器 miniRadarContainer)
     if (window.dagViewManager) {
       window.dagViewManager.initMiniRadar('miniRadarContainer');
     }
+
+    // 浏览器音频自动播放策略要求用户手势：首次任意点击/按键时解锁 AudioContext
+    const unlockAudio = () => {
+      if (window.monitorAudio) window.monitorAudio.unlock();
+      document.removeEventListener('pointerdown', unlockAudio);
+      document.removeEventListener('keydown', unlockAudio);
+    };
+    document.addEventListener('pointerdown', unlockAudio);
+    document.addEventListener('keydown', unlockAudio);
 
     // 默认装载并渲染首个 Tab (问诊) 的高频临床快捷指令
     this.renderQuickActions('inquiry');
@@ -380,6 +405,10 @@ class ClinMindApp {
           student_name: this.studentName
         })
       });
+      if (!res.ok) {
+        this.addSystemMessage(`无法开始实训（HTTP ${res.status}），请确认 main.py 是否启动。`);
+        return;
+      }
       const data = await res.json();
       this.sessionId = data.session_id;
 
@@ -416,6 +445,7 @@ class ClinMindApp {
 
     this.ws.onopen = () => {
       console.log('Telemetry WebSocket connected.');
+      this.wsRetryCount = 0;
       const badge = document.getElementById('wsStatusBadge');
       if (badge) {
         badge.innerText = '1Hz 在线推演中';
@@ -434,13 +464,32 @@ class ClinMindApp {
       }
     };
 
-    this.ws.onclose = () => {
+    this.ws.onclose = (event) => {
+      // 1008/4404: the backend no longer knows this session (server restart or
+      // TTL eviction). Reconnecting would loop forever — ask for a fresh start.
+      if (event.code === 1008 || event.code === 4404) {
+        const badge = document.getElementById('wsStatusBadge');
+        if (badge) {
+          badge.innerText = '会话已失效';
+          badge.className = 'px-2 py-0.5 rounded text-xs bg-rose-950 text-rose-400 border border-rose-600';
+        }
+        this.addSystemMessage('当前实训会话已失效（后端可能已重启），请刷新页面重新开始实训。');
+        return;
+      }
+
+      // Exponential backoff with a retry cap instead of a tight 2s loop.
       const badge = document.getElementById('wsStatusBadge');
       if (badge) {
         badge.innerText = '离线 / 重连中';
         badge.className = 'px-2 py-0.5 rounded text-xs bg-rose-950 text-rose-400 border border-rose-600';
       }
-      setTimeout(() => this.connectWebSocket(), 2000);
+      if (this.wsRetryCount >= 5) {
+        this.addSystemMessage('遥测连接已断开且多次重连失败，请刷新页面或重启 main.py。');
+        return;
+      }
+      const delay = Math.min(2000 * Math.pow(2, this.wsRetryCount), 15000);
+      this.wsRetryCount += 1;
+      setTimeout(() => this.connectWebSocket(), delay);
     };
   }
 
@@ -471,7 +520,7 @@ class ClinMindApp {
     // 2. Update ECG Canvas Waveform
     const isArrest = (payload.patient_state === 'S5_AORTIC_RUPTURE' || payload.patient_state === 'S6_CARDIAC_ARREST');
     if (this.ecgRenderer) {
-      this.ecgRenderer.updateVitals(hrVal, spo2Val, isArrest);
+      this.ecgRenderer.updateVitals(hrVal, spo2Val, isArrest, rrVal);
     }
 
     // 3. Update Patient State Badge
@@ -517,7 +566,7 @@ class ClinMindApp {
     if (payload.rupture_countdown !== null && payload.rupture_countdown > 0) {
       if (countdownBox) countdownBox.classList.remove('hidden');
       if (countdownVal) countdownVal.innerText = `${Math.ceil(payload.rupture_countdown)}s`;
-      if (window.monitorAudio) window.monitorAudio.playCriticalAlarm();
+      this.maybePlayCriticalAlarm();
     } else {
       if (countdownBox) countdownBox.classList.add('hidden');
     }
@@ -534,10 +583,21 @@ class ClinMindApp {
       });
     }
 
-    // High blood pressure alarm
-    if (sbpVal >= 190 && window.monitorAudio && Math.random() < 0.2) {
-      window.monitorAudio.playCriticalAlarm();
+    // 危急警报以后端 alarms 通道为权威信号源（替代前端按 SBP 阈值+随机的
+    // 自行推断——初始 S0 高血压状态不应每几秒随机触发"致命警报"）。
+    if (Array.isArray(payload.alarms) && payload.alarms.length > 0) {
+      this.maybePlayCriticalAlarm();
     }
+  }
+
+  /**
+   * Critical alarm with a 3s cool-down: 1Hz 遥测下避免每秒连续轰炸造成警报疲劳。
+   */
+  maybePlayCriticalAlarm() {
+    const now = performance.now();
+    if (now - this._lastCriticalAlarmAt < 3000) return;
+    this._lastCriticalAlarmAt = now;
+    if (window.monitorAudio) window.monitorAudio.playCriticalAlarm();
   }
 
   handleCustomActionSubmit() {
@@ -576,9 +636,19 @@ class ClinMindApp {
         })
       });
 
+      if (!res.ok) {
+        let detail = `HTTP ${res.status}`;
+        try {
+          const errData = await res.json();
+          if (errData && errData.detail) detail = errData.detail;
+        } catch (_) { /* body was not JSON */ }
+        this.addSystemMessage(`指令执行失败：${detail}`);
+        return;
+      }
+
       const data = await res.json();
       if (!data.success) {
-        this.addSystemMessage(`执行失败：${data.message}`);
+        this.addSystemMessage(`执行失败：${data.message || '未知错误'}`);
         return;
       }
 
@@ -601,31 +671,16 @@ class ClinMindApp {
 
       // Render warning
       if (data.warning) {
-        this.hasLethalAction = true;
         this.addSystemMessage(`⚠️ 严重危险预警：${data.warning}`);
       }
-
-      // 实时动态更新微缩思维雷达
-      this.updateMiniRadarDynamically();
     } catch (err) {
       console.error('Execute action error', err);
       this.addSystemMessage('指令传输异常，请检查网络。');
     }
   }
 
-  updateMiniRadarDynamically() {
-    if (!window.dagViewManager) return;
-    const count = this.actionCount || 1;
-    const scores = {
-      timeliness: Math.min(96, 62 + count * 6),
-      safety: this.hasLethalAction ? 45 : Math.min(98, 85 + count * 2),
-      precision: Math.min(96, 68 + count * 5),
-      communication: Math.min(92, 60 + count * 5),
-      guideline: Math.min(95, 65 + count * 5),
-      prioritization: Math.min(94, 63 + count * 5)
-    };
-    window.dagViewManager.updateMiniRadar(scores);
-  }
+  // NOTE: 微缩雷达只在结案评测（renderEvaluationReport → renderOSCERadar）时
+  // 用后端真实分数更新；不再于操作过程中用前端编造的公式刷新，避免伪造考核数据。
 
   addDialogueBubble(speaker, role, text, meta) {
     if (!text || text === 'undefined' || String(text).trim() === '') return;
@@ -660,10 +715,14 @@ class ClinMindApp {
         </span>
         <span class="text-[10px] font-mono-swiss text-slate-500 font-medium">${new Date().toLocaleTimeString()}</span>
       </div>
-      <div class="text-xs text-slate-900 leading-relaxed whitespace-pre-wrap font-medium select-text">${text}</div>
+      <div class="text-xs text-slate-900 leading-relaxed whitespace-pre-wrap font-medium select-text">${escapeHtml(text)}</div>
     `;
 
     stream.appendChild(div);
+    // 长会话防 DOM 无限增长：超过 200 条时移除最旧记录
+    while (stream.children.length > 200) {
+      stream.removeChild(stream.firstChild);
+    }
     stream.scrollTop = stream.scrollHeight;
   }
 
@@ -679,9 +738,13 @@ class ClinMindApp {
         <span class="text-[10px] font-mono-swiss text-amber-900 font-bold uppercase tracking-wider">[DISPATCH SYSTEM NOTICE // 系统调度]</span>
         <span class="text-[10px] font-mono-swiss text-slate-500 font-medium">${new Date().toLocaleTimeString()}</span>
       </div>
-      <div class="text-slate-900 font-medium text-xs leading-relaxed select-text">${text}</div>
+      <div class="text-slate-900 font-medium text-xs leading-relaxed select-text">${escapeHtml(text)}</div>
     `;
     stream.appendChild(div);
+    // 长会话防 DOM 无限增长：超过 200 条时移除最旧记录
+    while (stream.children.length > 200) {
+      stream.removeChild(stream.firstChild);
+    }
     stream.scrollTop = stream.scrollHeight;
   }
 
@@ -729,8 +792,8 @@ class ClinMindApp {
         const isAlertValue = valStr.includes('↑') || valStr.includes('高') || valStr.includes('阳性') || valStr.includes('危急') || valStr.includes('压差') || valStr.includes('撕裂') || valStr.includes('增宽');
         tableHtml += `
           <div class="flex items-start justify-between text-[11px] font-mono-swiss gap-2">
-            <span class="text-slate-500 shrink-0 font-medium">${k}:</span>
-            <span class="font-bold ${isAlertValue ? 'text-rose-600' : 'text-slate-900'} text-right leading-tight">${valStr}</span>
+            <span class="text-slate-500 shrink-0 font-medium">${escapeHtml(k)}:</span>
+            <span class="font-bold ${isAlertValue ? 'text-rose-600' : 'text-slate-900'} text-right leading-tight">${escapeHtml(valStr)}</span>
           </div>`;
       }
       tableHtml += '</div>';
@@ -738,9 +801,9 @@ class ClinMindApp {
 
     const isCritical = report.critical_alert || false;
 
-    const cardTitle = report.title || report.item_name || report.name || '客观检查凭证';
-    const cardConclusion = report.conclusion || report.interpretation || (Array.isArray(report.findings) ? report.findings.join('；') : report.findings) || '客观指标测定完毕，详见明细';
-    const cardModality = report.modality || 'STAT_REPORT';
+    const cardTitle = escapeHtml(report.title || report.item_name || report.name || '客观检查凭证');
+    const cardConclusion = escapeHtml(report.conclusion || report.interpretation || (Array.isArray(report.findings) ? report.findings.join('；') : report.findings) || '客观指标测定完毕，详见明细');
+    const cardModality = escapeHtml(report.modality || 'STAT_REPORT');
 
     card.innerHTML = `
       <div>
@@ -949,6 +1012,8 @@ class ClinMindApp {
       if (pProv) pProv.value = 'custom';
     } else if (type === 'offline') {
       if (pKey) pKey.value = '';
+      // 后端 /api/config/llm 以 provider="offline" 识别免 Key 离线模式，
+      // 误填 deepseek 会在保存时因缺少 API Key 被 400 拒绝。
       if (pProv) pProv.value = 'offline';
       if (pBase) pBase.value = '';
       if (pModel) pModel.value = 'offline-rule-engine';
@@ -971,10 +1036,10 @@ class ClinMindApp {
       if (pKey && data.masked_key) pKey.placeholder = '当前密钥: ' + data.masked_key;
       if (txtMode) {
         if (data.use_online) {
-          txtMode.innerHTML = '🟢 模式: 在线大模型 (' + (data.model || 'LLM') + ')';
+          txtMode.textContent = '🟢 模式: 在线大模型 (' + (data.model || 'LLM') + ')';
           if (badge) badge.className = 'flex items-center gap-1.5 text-[10px] font-mono-swiss text-emerald-800 bg-emerald-50 border border-emerald-300 px-2.5 py-1 select-none font-bold';
         } else {
-          txtMode.innerHTML = '⚪ 模式: 离线规则仿真 (免Key)';
+          txtMode.textContent = '⚪ 模式: 离线规则仿真 (免Key)';
           if (badge) badge.className = 'flex items-center gap-1.5 text-[10px] font-mono-swiss text-slate-700 bg-slate-100 border border-slate-300 px-2.5 py-1 select-none';
         }
       }
@@ -1034,20 +1099,20 @@ class ClinMindApp {
       if (data.success || data.status === 'success' || data.use_online !== undefined) {
         if (statusBox) {
           statusBox.className = 'mt-3 p-2.5 text-xs font-mono-swiss border border-emerald-500 bg-emerald-50 text-emerald-800 min-h-[38px] flex items-center justify-center transition-all';
-          statusBox.innerHTML = '<span class="font-bold">✓ ' + (data.message || '配置已成功保存并生效！') + '</span>';
+          statusBox.innerHTML = '<span class="font-bold">✓ ' + escapeHtml(data.message || '配置已成功保存并生效！') + '</span>';
         }
         await this.fetchLlmConfig();
         setTimeout(() => this.closeConfigModal(), 1500);
       } else {
         if (statusBox) {
           statusBox.className = 'mt-3 p-2.5 text-xs font-mono-swiss border border-rose-500 bg-rose-50 text-rose-800 min-h-[38px] flex items-center justify-center transition-all';
-          statusBox.innerHTML = '<span class="font-bold">✗ 保存失败: ' + (data.detail || data.message || '未知错误') + '</span>';
+          statusBox.innerHTML = '<span class="font-bold">✗ 保存失败: ' + escapeHtml(data.detail || data.message || '未知错误') + '</span>';
         }
       }
     } catch (e) {
       if (statusBox) {
         statusBox.className = 'mt-3 p-2.5 text-xs font-mono-swiss border border-rose-500 bg-rose-50 text-rose-800 min-h-[38px] flex items-center justify-center transition-all';
-        statusBox.innerHTML = '<span class="font-bold">✗ 请求异常: ' + e.message + '</span>';
+        statusBox.innerHTML = '<span class="font-bold">✗ 请求异常: ' + escapeHtml(e.message) + '</span>';
       }
     } finally {
       if (saveBtn) {

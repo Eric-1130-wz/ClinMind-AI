@@ -145,8 +145,9 @@ class TestHiddenHistoryUnlockEvolution(unittest.TestCase):
         self.agent = AgentEngine()
 
     def test_subcritical_trust_locks_hidden_history(self):
-        """When trust is subcritical (<0.35), patient and family withhold key details."""
-        self.agent.state.patient_trust = 0.20
+        """When trust is subcritical (<0.50), patient and family withhold key details."""
+        # Initial trust is 0.40, i.e. already subcritical against the 0.50 gate.
+        self.assertLess(self.agent.state.patient_trust, 0.50)
         dialogues = self.agent.handle_inquiry("请问您平时有高血压吗？平时吃药规律吗？")
         texts = " ".join([d.text for d in dialogues])
         # Hidden golden details (200/115, 停药两周) must NOT be fully revealed by patient
@@ -154,12 +155,12 @@ class TestHiddenHistoryUnlockEvolution(unittest.TestCase):
         self.assertNotIn("赶工程进度，天天熬夜加班，还擅自把降压药全停了", texts)
 
     def test_supercritical_trust_unlocks_hidden_history(self):
-        """Empathy increases trust past 0.35 threshold, unlocking complete hidden history."""
-        # Starting trust is 0.40, empathy increases it
+        """Empathy increases trust past the 0.50 threshold, unlocking complete hidden history."""
+        # Starting trust is 0.40, a single empathy round (+0.15) crosses the gate.
         init_trust = self.agent.state.patient_trust
         _ = self.agent.handle_inquiry("大爷别紧张，我们马上给您镇痛和控制血压，全力救治！")
         self.assertGreater(self.agent.state.patient_trust, init_trust)
-        self.assertGreaterEqual(self.agent.state.patient_trust, 0.35)
+        self.assertGreaterEqual(self.agent.state.patient_trust, 0.50)
 
         # Now inquire regarding hypertension
         dialogues = self.agent.handle_inquiry("大爷，您以前有高血压病史吗？平时吃药情况怎么样？")
@@ -211,12 +212,13 @@ class TestDualTrackGraphRAGGuardrailRobustness(unittest.TestCase):
         self.assertTrue(any(kw in str(cta) for kw in ["第一原发破口", "内膜剥脱撕裂", "真假两腔"]))
         self.assertTrue("心包" in str(cta) and "积血" in str(cta))
 
-        # Fictitious test does NOT hallucinate aortic findings and returns safe fallback
+        # Fictitious test must NOT hallucinate any values (including "normal"):
+        # the guardrail refuses to fabricate results for unconfigured items.
         matched_fake, fake_res, _ = self.guard.route_lab_or_imaging("全身PET-CT纳米分子显影检查")
         self.assertFalse(matched_fake)
         self.assertIsNotNone(fake_res)
-        self.assertEqual(fake_res.get("status"), "NORMAL")
-        self.assertIn("正常参考范围", str(fake_res))
+        self.assertEqual(fake_res.get("status"), "NOT_CONFIGURED")
+        self.assertIn("未配置", str(fake_res))
 
     def test_critical_value_alert_and_ecg_differentiation(self):
         """D-Dimer returns extreme critical value; 18-lead ECG excludes acute STEMI."""
