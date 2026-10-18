@@ -1,0 +1,208 @@
+"""Global configuration for ClinMind-AI system."""
+
+from pathlib import Path
+import os
+from datetime import datetime, timezone
+
+BASE_DIR = Path(__file__).resolve().parent
+
+# Auto-load .env file if present
+ENV_FILE = BASE_DIR / ".env"
+def _load_env_file():
+    if not ENV_FILE.exists():
+        return
+    try:
+        with open(ENV_FILE, "r", encoding="utf-8-sig") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                k = k.strip()
+                v = v.strip().strip("'").strip('"')
+                if k and k not in os.environ:
+                    os.environ[k] = v
+    except Exception as e:
+        print(f"Warning loading .env: {e}")
+
+_load_env_file()
+
+# Server Config
+HOST: str = os.getenv("HOST", "127.0.0.1")
+PORT: int = int(os.getenv("PORT", "8000"))
+DEBUG: bool = os.getenv("DEBUG", "false").lower() in ("true", "1", "yes")
+
+# Directories
+STATIC_DIR: Path = BASE_DIR / "static"
+DATA_DIR: Path = BASE_DIR / "app" / "data"
+RUNTIME_DIR: Path = Path(os.getenv("CLINMIND_RUNTIME_DIR", str(BASE_DIR / "runtime")))
+
+# LLM Configuration
+LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "deepseek")  # "deepseek" | "openai" | "custom" | "offline"
+OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+OPENAI_BASE_URL: str = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+DEEPSEEK_API_KEY: str = os.getenv("DEEPSEEK_API_KEY", "")
+DEEPSEEK_BASE_URL: str = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
+LLM_MODEL: str = os.getenv("LLM_MODEL", "deepseek-chat")
+
+def _optional_bool(value: str):
+    value = (value or "").strip().lower()
+    if value in {"true", "1", "yes", "ok", "success"}:
+        return True
+    if value in {"false", "0", "no", "error", "failed"}:
+        return False
+    return None
+
+# Last explicit connectivity check, shown in the model settings dialog.  This
+# is metadata only; it never stores or returns the API credential.
+LLM_CONNECTION_OK = _optional_bool(os.getenv("LLM_CONNECTION_OK", ""))
+LLM_CONNECTION_TESTED_AT: str = os.getenv("LLM_CONNECTION_TESTED_AT", "")
+LLM_CONNECTION_MESSAGE: str = os.getenv("LLM_CONNECTION_MESSAGE", "尚未执行连接测试")
+
+# Online model calls are an explicit opt-in.  A key in a local .env file is
+# not enough to enable network traffic: this keeps a fresh checkout fully
+# deterministic/offline and prevents an accidentally committed or inherited
+# key from being used by the simulation.
+ONLINE_LLM_ENABLED: bool = os.getenv("USE_ONLINE_LLM", "false").lower() in ("true", "1", "yes")
+
+def is_online_llm_active() -> bool:
+    if not ONLINE_LLM_ENABLED:
+        return False
+    if os.getenv("USE_OFFLINE_ONLY", "false").lower() in ("true", "1", "yes"):
+        return False
+    if LLM_PROVIDER == "deepseek" and DEEPSEEK_API_KEY:
+        return True
+    if LLM_PROVIDER == "custom" and OPENAI_BASE_URL:
+        return True
+    if LLM_PROVIDER == "openai" and OPENAI_API_KEY:
+        return True
+    return False
+
+USE_ONLINE_LLM: bool = is_online_llm_active()
+
+def _write_env_file(managed: dict) -> None:
+    """Rewrite .env updating only the managed LLM keys.
+
+    Lines the LLM config does not own (HOST / PORT / DEBUG / custom entries)
+    are preserved verbatim so toggling providers never silently drops them.
+    """
+    managed = {k.upper(): v for k, v in managed.items()}
+    kept = []
+    if ENV_FILE.exists():
+        with open(ENV_FILE, "r", encoding="utf-8-sig") as f:
+            for line in f:
+                stripped = line.strip()
+                if stripped and not stripped.startswith("#") and "=" in stripped:
+                    key = stripped.split("=", 1)[0].strip().upper()
+                    if key in managed:
+                        continue
+                kept.append(line.rstrip("\n"))
+    lines = ["# ClinMind-AI Configuration"] + kept + [f"{k}={v}" for k, v in managed.items()]
+    with open(ENV_FILE, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+
+
+def save_llm_config(provider: str, api_key: str, base_url: str = "", model: str = "", *, connection_tested: bool = False, connection_ok=None, connection_message: str = ""):
+    """Dynamically save LLM settings to .env and reload in-memory variables."""
+    global LLM_PROVIDER, OPENAI_API_KEY, OPENAI_BASE_URL, DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, LLM_MODEL, USE_ONLINE_LLM, ONLINE_LLM_ENABLED, LLM_CONNECTION_OK, LLM_CONNECTION_TESTED_AT, LLM_CONNECTION_MESSAGE
+
+    if provider == "offline":
+        LLM_CONNECTION_OK = None
+        LLM_CONNECTION_TESTED_AT = ""
+        LLM_CONNECTION_MESSAGE = "离线模式，无需连接测试"
+    elif connection_tested:
+        LLM_CONNECTION_OK = connection_ok if connection_ok in (True, False) else None
+        LLM_CONNECTION_TESTED_AT = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        LLM_CONNECTION_MESSAGE = connection_message or ("API 连接成功" if connection_ok else "API 连接失败")
+    elif provider != "offline":
+        LLM_CONNECTION_OK = None
+        LLM_CONNECTION_TESTED_AT = ""
+        LLM_CONNECTION_MESSAGE = "配置已保存，尚未执行连接测试"
+    
+    LLM_PROVIDER = provider
+    if provider == "deepseek":
+        DEEPSEEK_API_KEY = api_key
+        if base_url:
+            DEEPSEEK_BASE_URL = base_url
+        if model:
+            LLM_MODEL = model
+        else:
+            LLM_MODEL = "deepseek-chat"
+    elif provider in ("openai", "custom"):
+        OPENAI_API_KEY = api_key
+        if base_url:
+            OPENAI_BASE_URL = base_url
+        if model:
+            LLM_MODEL = model
+        else:
+            LLM_MODEL = "gpt-4o-mini"
+    elif provider == "offline":
+        os.environ["USE_OFFLINE_ONLY"] = "true"
+        os.environ["USE_ONLINE_LLM"] = "false"
+        ONLINE_LLM_ENABLED = False
+        USE_ONLINE_LLM = False
+        LLM_MODEL = "offline-rule-engine"
+        try:
+            _write_env_file({
+                "USE_OFFLINE_ONLY": "true",
+                "USE_ONLINE_LLM": "false",
+                "LLM_PROVIDER": "offline",
+                "LLM_MODEL": "offline-rule-engine",
+                "LLM_CONNECTION_OK": "",
+                "LLM_CONNECTION_TESTED_AT": "",
+                "LLM_CONNECTION_MESSAGE": "离线模式，无需连接测试",
+            })
+        except Exception as e:
+            return False, f"写入本地配置失败: {e}"
+        return True, "已切换为纯离线高仿真规则引擎模式 (免Key 100%全保真)"
+
+    os.environ["USE_OFFLINE_ONLY"] = "false"
+    os.environ["USE_ONLINE_LLM"] = "true"
+    ONLINE_LLM_ENABLED = True
+    USE_ONLINE_LLM = is_online_llm_active()
+
+    # Write to .env (preserving unrelated keys such as HOST/PORT/DEBUG)
+    try:
+        _write_env_file({
+            "USE_OFFLINE_ONLY": "false",
+            "USE_ONLINE_LLM": "true",
+            "LLM_PROVIDER": LLM_PROVIDER,
+            "DEEPSEEK_API_KEY": DEEPSEEK_API_KEY,
+            "DEEPSEEK_BASE_URL": DEEPSEEK_BASE_URL,
+            "OPENAI_API_KEY": OPENAI_API_KEY,
+            "OPENAI_BASE_URL": OPENAI_BASE_URL,
+            "LLM_MODEL": LLM_MODEL,
+            "LLM_CONNECTION_OK": "true" if LLM_CONNECTION_OK is True else "false" if LLM_CONNECTION_OK is False else "",
+            "LLM_CONNECTION_TESTED_AT": LLM_CONNECTION_TESTED_AT,
+            "LLM_CONNECTION_MESSAGE": LLM_CONNECTION_MESSAGE,
+        })
+    except Exception as e:
+        print(f"Error persisting .env: {e}")
+        return False, f"写入本地配置失败: {e}"
+
+    mode_str = "在线大模型协同" if USE_ONLINE_LLM else "离线规则仿真"
+    return True, f"配置已成功保存并生效！当前运行模式: {mode_str}"
+
+# Simulation Engine Parameters
+VIRTUAL_TICK_RATE_HZ: float = 1.0  # 1Hz physiology tick
+TIME_ACCELERATION_FACTOR: float = 1.0  # 1.0 = real-time, can accelerate virtual clock
+
+# Fatal Red-line Medications (Contraindicated for Stanford Type A Aortic Dissection)
+LETHAL_MEDICATION_KEYWORDS = [
+    "aspirin", "阿司匹林",
+    "ticagrelor", "替格瑞洛",
+    "clopidogrel", "氯吡格雷",
+    "heparin", "肝素",
+    "alteplase", "阿替普酶", "rtpa", "rt-pa",
+    "urokinase", "尿激酶",
+    "tenecteplase", "替奈普酶",
+    "bivalirudin", "比伐卢定",
+    "warfarin", "华法林",
+    "rivaroxaban", "利伐沙班"
+]
+
+# Targeted Anti-hypertensive & Heart Rate Lowering Medications
+TARGET_DISSECTION_MEDICATIONS = [
+    "esmolol", "艾司洛尔", "betaloc", "美托洛尔", "labetalol", "拉贝洛尔",
+    "nitroprusside", "硝普钠", "nicardipine", "尼卡地平", "nitroglycerin", "硝酸甘油"
+]

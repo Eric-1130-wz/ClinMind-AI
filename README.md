@@ -1,4 +1,4 @@
-# ClinMind-AI
+# ClinMind-AI v2
 
 > 面向临床思维训练与 OSCE 复盘的虚拟标准化患者系统。通过病例规则、连续生命体征仿真和多角色对话，把问诊、检查、处方与转归决策串成一个可回放的教学场景。
 
@@ -29,6 +29,7 @@
 - **实时推送与恢复**：通过 WebSocket 推送 1 Hz 监护数据；SQLite 保存会话、操作记录、报告和评分，刷新页面后可以恢复训练进度。
 - **OSCE 复盘**：结案后生成总分、六维能力雷达图、操作时间线、致命错误和临床反馈。
 - **可选模型服务**：默认使用离线规则引擎；也可在设置窗口配置 DeepSeek、OpenAI 或自定义 OpenAI 兼容接口，并执行 API 连通测试查看状态。
+- **可扩展病例库**：融合旧版的 5 个通用病例（感冒、胃肠炎、哮喘、低血糖、阑尾炎）和原有高阶胸痛病例；病例索引、查体结果、检查报告、对话与治疗提示均从 JSON 读取。
 
 ## 快速开始
 
@@ -38,12 +39,12 @@
 2. 双击项目根目录的 `start.cmd`。
 3. 浏览器打开 [http://127.0.0.1:8000](http://127.0.0.1:8000)。
 
-启动脚本会进入源码目录，优先使用其中的 `.venv`；如果虚拟环境或依赖不存在，会自动创建并安装 `requirements.txt`。首次安装依赖需要网络，启动后的离线演示不需要 API Key。
+启动脚本会进入 `aic_mech`，优先使用其中的 `.venv`，服务就绪后自动打开浏览器；如果虚拟环境或依赖不存在，会自动创建并安装 `requirements.txt`。端口被占用时会自动选择后续可用端口。首次安装依赖需要网络，启动后的离线演示不需要 API Key。
 
 ### 手动启动
 
 ```powershell
-Set-Location ".\ClinMind-AI_完整源代码包\ClinMind-AI_完整源代码包\aic_mech"
+Set-Location ".\aic_mech"
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe main.py
@@ -92,8 +93,7 @@ python -m venv .venv
 推荐直接在页面设置窗口中完成配置。也可以复制示例文件后手动编辑：
 
 ```powershell
-Copy-Item ".\ClinMind-AI_完整源代码包\ClinMind-AI_完整源代码包\aic_mech\.env.example" `
-  ".\ClinMind-AI_完整源代码包\ClinMind-AI_完整源代码包\aic_mech\.env"
+Copy-Item ".\\aic_mech\\.env.example" ".\\aic_mech\\.env"
 ```
 
 离线模式的最小配置：
@@ -108,7 +108,7 @@ LLM_PROVIDER=offline
 
 ## 当前教学病例
 
-项目内置 1 个胸痛教学病例：52 岁男性突发撕裂样胸背痛，病例目标是识别并处置 Stanford A 型主动脉夹层。学员可以在同一会话中完成：
+项目内置 6 个虚构教学病例，可从“下一位患者”选择。52 岁男性胸痛病例仍保留完整的主动脉夹层高风险引擎；其余 5 个病例使用各自的初始生命体征、病例报告、对话层和低风险仿真流程。胸痛病例目标是识别并处置 Stanford A 型主动脉夹层，学员可以在同一会话中完成：
 
 1. 初始生命体征观察和结构化问诊；
 2. 双上肢血压、心脏和神经系统等体查；
@@ -116,32 +116,29 @@ LLM_PROVIDER=offline
 4. 控制心率与血压、避免禁忌用药、呼叫相关专科；
 5. 提交诊断并查看 OSCE 评分与操作时间线。
 
-病例数据位于 `aic_mech/app/data/case_chest_pain.json`，专家决策图位于 `aic_mech/app/data/expert_golden_dag.json`。
+病例数据位于 `aic_mech/app/data/case_chest_pain.json` 与 `aic_mech/app/data/cases/`，病例索引为 `aic_mech/app/data/cases/index.json`；专家决策图位于 `aic_mech/app/data/expert_golden_dag.json`。旧版的通用病例说明与动作/对话设计文档保存在 `aic_mech/docs/`。
 
 ## 系统结构
 
 ```text
-ClinMind-AI_完整源代码包/
+ClinMind-AI-v2/
+├── start.cmd                       # Windows 双击启动入口
+├── start.ps1                       # 自动创建环境并启动服务
 ├── 01-接诊场景.png                 # 接诊室预览图
 ├── 02-电脑工作站.png               # 工作站预览图
-├── 使用说明.md                     # 面向使用者的运行说明
-├── start.cmd                       # Windows 一键启动入口
-├── start.ps1                       # 自动创建环境并启动服务
-└── ClinMind-AI_完整源代码包/
-    └── ClinMind-AI_完整源代码包/
-        └── aic_mech/
-            ├── app/
-            │   ├── api/             # REST 路由与 WebSocket
-            │   ├── core/            # 生理、护栏、Agent、评分和会话引擎
-            │   ├── data/            # 病例与专家决策图
-            │   └── models/          # Pydantic 数据模型
-            ├── static/               # HTML、CSS、Vanilla JS 前端
-            ├── tests/                # 后端、静态资源和浏览器联调测试
-            ├── config.py             # 服务、模型和仿真配置
-            ├── main.py               # Uvicorn 启动入口
-            └── requirements.txt      # Python 依赖
+├── 使用说明.md                     # 运行说明
+├── README.md                       # 项目说明
+└── aic_mech/
+    ├── app/                        # FastAPI、病例、引擎和数据模型
+    │   ├── data/cases/             # 5 个通用病例及病例索引
+    ├── docs/                       # 通用病例规则与动作/对话设计
+    ├── static/                     # 接诊室、工作站及旧版兼容前端
+    ├── tests/                      # 后端、静态资源和浏览器联调测试
+    ├── config.py                   # 服务、模型和仿真配置
+    ├── main.py                     # Uvicorn 启动入口
+    ├── requirements.txt            # Python 依赖
+    └── .env.example                # 安全配置模板
 ```
-
 后端使用 FastAPI + SQLite + WebSocket，前端为静态 HTML/CSS/JavaScript，不需要 Node.js 构建步骤。
 
 ## 测试与验证
@@ -149,7 +146,7 @@ ClinMind-AI_完整源代码包/
 在源码目录执行：
 
 ```powershell
-Set-Location ".\ClinMind-AI_完整源代码包\ClinMind-AI_完整源代码包\aic_mech"
+Set-Location ".\aic_mech"
 $env:PYTHONUTF8 = "1"
 .\.venv\Scripts\python.exe tests/run_all_tests.py
 ```
@@ -169,4 +166,6 @@ $env:PYTHONUTF8 = "1"
 ## 许可证
 
 当前仓库未附带明确的开源许可证。若要在 GitHub 公开发布，请根据作者和团队的授权范围补充 `LICENSE` 文件；在许可证明确前，请勿默认将本项目用于商业分发或二次发布。
+
+
 
