@@ -1,0 +1,68 @@
+{
+  "version": "1.0.0",
+  "updated_at": "2026-10-18",
+  "description": "急诊小诊室新手病例库：5位差异化虚拟病人（难度 2简+2中+1稍复杂）+ 1位高阶隐藏病例。所有病例均为虚构教学内容，无真实医疗风险。",
+  "selection_hint": "建议学生按 case_id 顺序挑战；case_chest_pain_001 为高阶隐藏病例，需通关前五位解锁。",
+  "patients": [
+    {
+      "case_id": "case_gam_001_common_cold",
+      "file": "case_gam_001_common_cold.json",
+      "name": "王秀兰", "gender": "女", "age": 55,
+      "difficulty": "新手 · 简单", "difficulty_stars": 1,
+      "disease": "急性上呼吸道感染（病毒性感冒）",
+      "one_liner": "话痨阿姨的\"重感冒\"——考你敢不敢不开抗生素",
+      "core_teaching": "抗生素不是万能药 · 对症支持治疗",
+      "tag": ["内科", "呼吸", "常见病"]
+    },
+    {
+      "case_id": "case_gam_002_gastroenteritis",
+      "file": "case_gam_002_gastroenteritis.json",
+      "name": "林浩", "gender": "男", "age": 22,
+      "difficulty": "新手 · 简单", "difficulty_stars": 1,
+      "disease": "急性胃肠炎（轻度脱水）",
+      "one_liner": "网吧少年的隔夜小龙虾——补液优先，别急着止泻",
+      "core_teaching": "补液第一 · 与阑尾炎的压痛点鉴别",
+      "tag": ["内科", "消化", "常见病"]
+    },
+    {
+      "case_id": "case_gam_003_asthma",
+      "file": "case_gam_003_asthma.json",
+      "name": "陈小雨", "gender": "女", "age": 19,
+      "difficulty": "进阶 · 中等", "difficulty_stars": 2,
+      "disease": "支气管哮喘急性发作（中度）",
+      "one_liner": "美术生的哨笛音——\"讲话短句=中度\"，吸入治疗刻不容缓",
+      "core_teaching": "呼气性呼吸困难识别 · 两类绝对禁药",
+      "tag": ["内科", "呼吸", "常见急症"]
+    },
+    {
+      "case_id": "case_gam_004_hypoglycemia",
+      "file": "case_gam_004_hypoglycemia.json",
+      "name": "赵国栋", "gender": "男", "age": 68,
+      "difficulty": "进阶 · 中等", "difficulty_stars": 2,
+      "disease": "低血糖症（降糖药相关）",
+      "one_liner": "晨练大爷的怪脾气——最完美的\"卒中模仿者\"，一滴血糖见真章",
+      "core_teaching": "先测血糖的诊疗顺序 · 15-15规则",
+      "tag": ["内科", "内分泌", "常见急症"]
+    },
+    {
+      "case_id": "case_gam_005_appendicitis",
+      "file": "case_gam_005_appendicitis.json",
+      "name": "周子昂", "gender": "男", "age": 29,
+      "difficulty": "挑战 · 稍复杂", "difficulty_stars": 3,
+      "disease": "急性阑尾炎（化脓性，未穿孔）",
+      "one_liner": "程序员的工伤——\"转移性右下腹痛\"+\"先痛后热\"，与胃肠炎互为镜像陷阱",
+      "core_teaching": "急腹症查体三联 · 禁泻药/禁热敷/诊断前禁强镇痛",
+      "tag": ["外科", "急腹症", "常见急症"]
+    },
+    {
+      "case_id": "case_chest_pain_001",
+      "file": "../case_chest_pain.json",
+      "name": "孙建国", "gender": "男", "age": 52,
+      "difficulty": "高阶 · 隐藏病例", "difficulty_stars": 4,
+      "disease": "Stanford A型主动脉夹层",
+      "one_liner": "撕裂样胸背痛+双上肢压差——绝对禁止抗栓的红线病例",
+      "core_teaching": "抗栓禁忌红线 · 先控心率再降压",
+      "tag": ["急危重症", "心血管", "隐藏病例"]
+    }
+  ]
+}
