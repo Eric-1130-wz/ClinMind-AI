@@ -11,7 +11,7 @@ from app.core.session_manager import SessionStore
 from app.server import app
 
 
-class GameBackendTests(unittest.TestCase):
+class SessionBackendTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.path_patch = patch.object(config, "RUNTIME_DIR", Path(self.temp.name))
@@ -70,12 +70,13 @@ class GameBackendTests(unittest.TestCase):
         SessionStore.get_instance().tick_all()
         session=SessionStore.get_instance().get_session(self.session_id)
         self.assertEqual(session.virtual_seconds, 0)
-        self.assertEqual(self.action().status_code, 400)
+        # 结案后动作返 410 Gone（D-54：终局状态码分层）。
+        self.assertEqual(self.action().status_code, 410)
         self.assertTrue(self.client.get(f'/api/case/session/{self.session_id}/workspace').json()['assessment'])
 
     def test_new_ui_and_health_are_served(self):
         self.assertEqual(self.client.get('/api/health').json()['status'], 'ok')
-        for page in ['reception.html','workstation.html','js/game.js','css/game.css']:
+        for page in ['reception.html','workstation.html','js/scene.js','css/scene.css']:
             self.assertEqual(self.client.get('/static/'+page).status_code, 200)
 
     def test_configuration_hides_credentials_and_requires_opt_in(self):

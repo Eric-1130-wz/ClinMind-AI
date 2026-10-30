@@ -113,6 +113,34 @@ def test_guardrail_lab_and_imaging_routing():
     assert "Stanford A型" in str(cta)
 
 
+def test_guardrail_routes_every_authored_lab_panel():
+    """病例 JSON 里写的每个 lab_panels 都必须能被开出来。
+
+    别名表曾只硬编码 8 个标准项，病例自带的 CRP、胸片、病原核酸、CT 等
+    19 项一点就回 NOT_CONFIGURED —— 数据在、引擎读不到。这里按病例逐个
+    断言，新增病例项忘了接线会立刻红。
+    """
+    import json
+    from pathlib import Path
+
+    data_dir = Path(__file__).resolve().parent.parent / "app" / "data"
+    case_files = sorted((data_dir / "cases").glob("*.json")) + [data_dir / "case_chest_pain.json"]
+    checked = 0
+    for case_file in case_files:
+        payload = json.loads(case_file.read_text(encoding="utf-8"))
+        panels = payload.get("lab_panels") or []
+        if not panels:
+            continue
+        guard = GuardrailEngine(case_file)
+        for panel in panels:
+            matched, report, _ = guard.route_lab_or_imaging(panel["name"])
+            assert matched is True, f"{case_file.name} 的【{panel['name']}】点不出来"
+            assert report is not None
+            assert report.get("status") != "NOT_CONFIGURED"
+            checked += 1
+    assert checked >= 30, f"只检查到 {checked} 个检查项，病例库可能没读到"
+
+
 # ================= 3. Multi-Agent Engine Tests =================
 
 def test_agent_patient_trust_evolution():
@@ -344,6 +372,76 @@ def test_api_full_flow():
     assert "comparison_dag" in eval_data
 
 
+def test_guardrail_routes_every_authored_exam_option():
+    """病例 JSON 里写的每个 exam_options 都必须能开出报告。
+
+    体查路由曾只认胸痛病例的 8 个器官分支，五个教学病例自带的床旁查体
+    （鼻咽部视诊、颈部淋巴结触诊、腹部查体……31 项）数据在 JSON 里躺着，
+    点了却回「未配置」。这里按病例逐个断言 name 能开出且 exam_id 对得上，
+    未命中的乱写项仍必须回落到防幻觉护栏。
+    """
+    import json
+    from pathlib import Path
+
+    data_dir = Path(__file__).resolve().parent.parent / "app" / "data"
+    case_files = sorted((data_dir / "cases").glob("*.json")) + [data_dir / "case_chest_pain.json"]
+    checked = 0
+    cases = 0
+    for case_file in case_files:
+        payload = json.loads(case_file.read_text(encoding="utf-8"))
+        options = payload.get("exam_options") or []
+        if not options:
+            continue
+        cases += 1
+        guard = GuardrailEngine(case_file)
+        for option in options:
+            matched, report, message = guard.route_physical_exam(option["name"])
+            assert matched is True, f"{case_file.name} 的体查【{option['name']}】点不出来"
+            assert isinstance(report, dict) and report, f"{case_file.name}【{option['name']}】没有报告体"
+            assert report.get("exam_id") == option["exam_id"], (
+                f"{case_file.name}【{option['name']}】路由到了 {report.get('exam_id')}"
+                f"，应为 {option['exam_id']}"
+            )
+            # 数据层开出的报告必须自报项目名；胸痛病例的旧器官分支有各自的
+            # 标题（如「心脏查体与瓣膜听诊」），其文本由既有用例锁定，不在此改。
+            if "查体所见：" in message:
+                assert option["name"] in message, f"{case_file.name}【{option['name']}】回报缺少项目名"
+            if option.get("duration_seconds") is not None:
+                assert report.get("duration_seconds") == option["duration_seconds"], (
+                    f"{case_file.name}【{option['name']}】耗时未带出"
+                )
+            checked += 1
+    print(f"  exam_options 命中 {checked} 项 / {cases} 个病例")
+    assert cases >= 6, f"只有 {cases} 个病例带 exam_options，病例库可能没读全"
+    assert checked >= 31, f"只命中 {checked} 个体查项"
+
+
+def test_physical_exam_unmatched_still_refused_and_general_exam_kept():
+    """未命中的乱写体查项仍走防幻觉护栏；泛问「查体」仍走旧的整例回报。"""
+    import json
+    from pathlib import Path
+
+    data_dir = Path(__file__).resolve().parent.parent / "app" / "data"
+    chest = GuardrailEngine(data_dir / "case_chest_pain.json")
+    matched, report, message = chest.route_physical_exam("随便看看舌苔颜色")
+    assert matched is False and report is None
+    assert "拒绝编造" in message
+
+    cold_path = data_dir / "cases" / "case_gam_001_common_cold.json"
+    cold = GuardrailEngine(cold_path)
+    matched, report, message = cold.route_physical_exam("随便看看舌苔颜色")
+    assert matched is False and report is None
+    assert "拒绝编造" in message
+
+    # 泛问「查体」时，若病例自带覆盖它的单项（感冒病例的「一般情况与体温」），
+    # 走数据层单项；否则仍回到旧的整例 general 回报（此处只锁前者不被退回 blob）。
+    matched, report, message = cold.route_physical_exam("请做一次全身查体")
+    assert matched is True and isinstance(report, dict)
+    authored = {o["exam_id"] for o in json.loads(cold_path.read_text(encoding="utf-8"))["exam_options"]}
+    assert report.get("exam_id") in authored
+    assert "查体所见：" in message
+
+
 if __name__ == "__main__":
     import sys
     test_functions = [
@@ -372,3 +470,283 @@ if __name__ == "__main__":
     else:
         print("🎉 ALL TESTS PASSED SUCCESSFULLY!")
 
+
+# ================= 6. 人设与病例校验（D-32 / D-27） =================
+
+def test_persona_titles_follow_case_profile():
+    """K5/D-32：每个病例的患者/家属抬头来自它自己的 patient_profile，不串戏。"""
+    from app.core.case_repository import CaseRepository
+
+    repo = CaseRepository()
+    names = []
+    for case_id in repo.ids():
+        data = repo.require(case_id)
+        profile = data.get("patient_profile") or {}
+        name = str(profile.get("name") or "").strip()
+        title = AgentEngine(case_data=data)._patient_role_title()
+        assert name, f"{case_id} 缺少 patient_profile.name"
+        assert name in title, f"{case_id} 的患者抬头没带上本病例姓名：{title}"
+        names.append(name)
+        family_title = AgentEngine(case_data=data)._family_role_title()
+        companion = str(profile.get("family_companion") or "")
+        relation = companion.split("（")[0].split("(")[0].strip()
+        if relation:
+            assert relation in family_title, f"{case_id} 的家属抬头没带上陪同关系：{family_title}"
+
+    # 交叉污染：任何病例的抬头里都不该出现别的病例患者姓名
+    for case_id in repo.ids():
+        data = repo.require(case_id)
+        own = str((data.get("patient_profile") or {}).get("name") or "")
+        title = AgentEngine(case_data=data)._patient_role_title()
+        for other in names:
+            if other != own:
+                assert other not in title, f"{case_id} 的抬头串到了别的病例：{title}"
+
+    # 裸构造（无病例）必须保持旧文案
+    bare = AgentEngine()
+    assert bare._patient_role_title() == "患者 孙建国 (52岁)"
+    assert bare._family_role_title() == "家属（妻子李秀梅）"
+    print(f"  persona ok: {len(names)} 个病例抬头互不串戏")
+
+
+def test_case_validation_strict_mode_raises_and_reports():
+    """K6/D-27：坏病例默认档留痕跳过，严格档拒绝启动。"""
+    import json
+    import shutil
+    import tempfile
+    from pathlib import Path
+
+    import config
+    from app.core.case_repository import CaseRepository, CaseValidationError
+
+    original_strict = getattr(config, "CASE_VALIDATION_STRICT", False)
+    tmp_dir = Path(tempfile.mkdtemp(prefix="clinmind_case_"))
+    try:
+        (tmp_dir / "cases").mkdir()
+        (tmp_dir / "case_chest_pain.json").write_text(
+            json.dumps({"case_id": "case_chest_pain_001", "title": "胸痛"}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        (tmp_dir / "cases" / "case_broken.json").write_text(
+            json.dumps({"title": "缺 case_id 的坏病例"}, ensure_ascii=False), encoding="utf-8"
+        )
+
+        config.CASE_VALIDATION_STRICT = False
+        repo = CaseRepository(data_dir=tmp_dir)
+        assert repo.ids() == ["case_chest_pain_001"], repo.ids()
+        assert len(repo.warnings) == 1 and "case_broken.json" in repo.warnings[0], repo.warnings
+
+        config.CASE_VALIDATION_STRICT = True
+        try:
+            CaseRepository(data_dir=tmp_dir)
+        except CaseValidationError as exc:
+            assert "case_broken.json" in str(exc), str(exc)
+        else:
+            raise AssertionError("严格档没有拒绝坏病例")
+    finally:
+        config.CASE_VALIDATION_STRICT = original_strict
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+    print("  case validation ok: 默认档留痕跳过 / 严格档抛错")
+
+
+# ================= 7. 问诊三分类 / 病例契约 / 信任双真值（spec/02 §2、spec/04 §1） =================
+
+def test_inquiry_classification_covers_every_case():
+    """验收 02 引擎侧：6 个病例各测切题 / 重复 / 无关三类判定。"""
+    from app.core.case_repository import CaseRepository
+
+    repo = CaseRepository()
+    chit_chat = "你最喜欢的电影是什么"
+    checked = 0
+    for case_id in repo.ids():
+        data = repo.require(case_id)
+        engine = AgentEngine(case_data=data)
+        points = [p for p in (data.get("inquiry_points") or []) if isinstance(p, str) and p.strip()]
+        assert points, f"{case_id} 没有 inquiry_points，无法测切题判定"
+
+        question = points[0]
+        assert engine.classify_inquiry(question) == "relevant", (
+            f"{case_id} 的病例问句没被判切题：{question} -> {engine.last_question_kind}"
+        )
+        assert engine.classify_inquiry(question) == "repeat", (
+            f"{case_id} 同一句第二次问没被判重复：{question}"
+        )
+        # 归一化后同一句（换标点 / 加空格）仍算重复
+        noisy = question.replace("？", "? ") + "  "
+        assert engine.classify_inquiry(noisy) == "repeat", f"{case_id} 归一化后没判重复：{noisy}"
+
+        assert engine.classify_inquiry(chit_chat) == "irrelevant", (
+            f"{case_id} 把闲聊判成了切题：{chit_chat} -> {engine.last_question_kind}"
+        )
+        checked += 1
+    assert checked == 6, f"只覆盖了 {checked} 个病例"
+    print(f"  inquiry classification ok: {checked} 个病例 ×（切题/重复/无关）")
+
+
+def test_inquiry_classification_exposed_without_breaking_return_type():
+    """分类结果对外可见，但 handle_inquiry 仍返回 List[DialogueMessage]。"""
+    from app.core.case_repository import get_case_repository
+
+    data = get_case_repository().require("case_chest_pain_001")
+    engine = AgentEngine(case_data=data)
+    question = "既往有高血压吗？最近有没有停药或漏服降压药？"
+
+    messages = engine.handle_inquiry(question)
+    assert isinstance(messages, list) and messages, "handle_inquiry 必须仍返回非空对话列表"
+    assert messages[0].speaker == "doctor"
+    assert getattr(messages, "question_kind", None) == "relevant", "分类结果没挂到返回值上"
+    assert engine.last_question_kind == "relevant"
+
+    again = engine.handle_inquiry(question)
+    assert getattr(again, "question_kind", None) == "repeat", "第二次问同一句没被判重复"
+    assert isinstance(again, list) and again
+
+    # 裸构造（无病例）不得抛错：判据退化为「无病例语料 → 非重复即无关」
+    bare = AgentEngine()
+    bare_messages = bare.handle_inquiry("随便问问")
+    assert isinstance(bare_messages, list) and bare_messages
+    assert bare.last_question_kind in ("relevant", "repeat", "irrelevant")
+    print("  inquiry api ok: 返回值仍是 list，question_kind 独立暴露")
+
+
+def test_case_validation_reports_missing_field_names():
+    """验收 10：严格档报出缺失字段名，默认档跳过并留痕。"""
+    import json
+    import shutil
+    import tempfile
+    from pathlib import Path
+
+    import config
+    from app.core.case_repository import CaseRepository, CaseValidationError
+
+    source = Path(__file__).resolve().parent.parent / "app" / "data" / "cases" / "case_gam_001_common_cold.json"
+    original_strict = getattr(config, "CASE_VALIDATION_STRICT", False)
+    tmp_dir = Path(tempfile.mkdtemp(prefix="clinmind_contract_"))
+    try:
+        (tmp_dir / "cases").mkdir()
+        broken = json.loads(source.read_text(encoding="utf-8-sig"))
+        dropped = [field for field in ("knowledge_card", "differentials") if broken.pop(field, None) is not None]
+        assert dropped == ["knowledge_card", "differentials"], dropped
+        (tmp_dir / "cases" / "case_missing.json").write_text(
+            json.dumps(broken, ensure_ascii=False), encoding="utf-8"
+        )
+
+        config.CASE_VALIDATION_STRICT = False
+        repo = CaseRepository(data_dir=tmp_dir)
+        assert repo.ids() == [], f"默认档不该加载缺字段的病例：{repo.ids()}"
+        assert len(repo.warnings) == 1, repo.warnings
+        for field in dropped:
+            assert field in repo.warnings[0], f"警告里没点名缺失字段 {field}：{repo.warnings[0]}"
+
+        config.CASE_VALIDATION_STRICT = True
+        try:
+            CaseRepository(data_dir=tmp_dir)
+        except CaseValidationError as exc:
+            text = str(exc)
+            assert "case_missing.json" in text, text
+            for field in dropped:
+                assert field in text, f"严格档异常消息没点名缺失字段 {field}：{text}"
+        else:
+            raise AssertionError("严格档没有拒绝缺字段的病例")
+
+        # outcomes 四档结构缺失同样要被点名
+        config.CASE_VALIDATION_STRICT = False
+        broken_outcomes = json.loads(source.read_text(encoding="utf-8-sig"))
+        broken_outcomes["outcomes"].pop("C", None)
+        (tmp_dir / "cases" / "case_missing.json").write_text(
+            json.dumps(broken_outcomes, ensure_ascii=False), encoding="utf-8"
+        )
+        config.CASE_VALIDATION_STRICT = True
+        try:
+            CaseRepository(data_dir=tmp_dir)
+        except CaseValidationError as exc:
+            assert "outcomes.C" in str(exc), str(exc)
+        else:
+            raise AssertionError("严格档没有拒绝 outcomes 缺 C 档的病例")
+    finally:
+        config.CASE_VALIDATION_STRICT = original_strict
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+    print("  case contract ok: 严格档点名缺失字段 / 默认档留痕跳过")
+
+
+def test_agent_state_mirrors_emotion_truth():
+    """信任双真值：AgentState 必须是 EmotionEngine 的镜像（空转与事件后都一致）。"""
+    from app.core.session_manager import SimulationSession
+
+    session = SimulationSession("mirror_check", "case_chest_pain_001")
+    assert session.emotion.state.patient_trust == session.agent_engine.state.patient_trust, "初始两账就不一致"
+
+    for _ in range(480):
+        session.tick(1.0)
+
+    emotion, agent = session.emotion.state, session.agent_engine.state
+    assert abs(emotion.patient_trust - agent.patient_trust) < 1e-9, (
+        f"空转 480s 后信任两账不一致：emotion={emotion.patient_trust:.3f} agent={agent.patient_trust:.3f}"
+    )
+    assert abs(emotion.patient_anxiety - agent.patient_anxiety) < 1e-9, (
+        f"患者焦虑两账不一致：emotion={emotion.patient_anxiety:.3f} agent={agent.patient_anxiety:.3f}"
+    )
+    assert abs(emotion.family_anxiety - agent.family_anxiety) < 1e-9, (
+        f"家属焦虑两账不一致：emotion={emotion.family_anxiety:.3f} agent={agent.family_anxiety:.3f}"
+    )
+    assert abs(session.agent_engine.current_trust() - emotion.patient_trust) < 1e-9, (
+        f"current_trust() 读到的不是情绪真值：{session.agent_engine.current_trust():.3f}"
+    )
+
+    # 一次安抚问诊：信任升、焦虑降，两边同步
+    session.emotion.apply_event("COMFORT")
+    assert abs(session.emotion.state.patient_trust - session.agent_engine.state.patient_trust) < 1e-9, (
+        "安抚后信任两账不一致"
+    )
+    assert abs(session.agent_engine.current_trust() - session.emotion.state.patient_trust) < 1e-9
+
+    # 迟到的 observe_action 直接改 AgentState 时，下一次 tick 必须被纠正回情绪真值
+    from app.models.entities import ActionType
+
+    session.agent_engine.observe_action(ActionType.INQUIRY, "安慰患者", safe=True)
+    assert session.agent_engine.state.patient_trust != session.emotion.state.patient_trust
+    session.tick(1.0)
+    assert abs(session.emotion.state.patient_trust - session.agent_engine.state.patient_trust) < 1e-9, (
+        "tick 后没有把 AgentState 纠正回情绪真值"
+    )
+    print(
+        f"  trust mirror ok: 空转 480s 两账 trust={session.emotion.state.patient_trust:.3f}、"
+        f"安抚后一致"
+    )
+
+
+def test_red_line_medication_moves_emotion_once():
+    """E10：开禁忌药必须掉信任、升焦虑，且一次动作只派发一次。"""
+    from app.core.session_manager import SimulationSession
+    from app.models.entities import ActionType
+
+    session = SimulationSession("redline_check", "case_chest_pain_001")
+    before = session.emotion.snapshot()
+
+    # 复刻 routes_action 的用药分支：先 observe_action，再一次 RED_LINE_MED
+    session.agent_engine.observe_action(ActionType.MEDICATION, "阿司匹林", safe=False)
+    delta = session.emotion.apply_event("RED_LINE_MED", {"drug": "阿司匹林"})
+    after = session.emotion.snapshot()
+
+    assert delta["patient_trust"] <= -0.12 + 1e-9, f"红线药没有扣信任：{delta}"
+    assert delta["patient_anxiety"] >= 0.15 - 1e-9, f"红线药没有升患者焦虑：{delta}"
+    assert delta["family_anxiety"] >= 0.15 - 1e-9, f"红线药没有升家属焦虑：{delta}"
+    assert after["patient_trust"] < before["patient_trust"], (before, after)
+    assert after["patient_anxiety"] > before["patient_anxiety"], (before, after)
+    assert after["family_anxiety"] > before["family_anxiety"], (before, after)
+
+    # delta_log 每个指标各记一条：按 metric 去重后，一次动作只该有 1 条红线记录
+    events = [
+        entry.get("event") for entry in session.emotion.delta_log
+        if entry.get("event") == "RED_LINE_MED" and entry.get("metric") == "patient_trust"
+    ]
+    assert len(events) == 1, f"红线药被派发了 {len(events)} 次"
+    # 镜像兜底：observe_action 的直改不会与情绪事件叠加成双倍扣分
+    assert abs(session.agent_engine.state.patient_trust - session.emotion.state.patient_trust) < 1e-9, (
+        f"红线药后两账不一致：agent={session.agent_engine.state.patient_trust:.3f} "
+        f"emotion={session.emotion.state.patient_trust:.3f}"
+    )
+    print(
+        f"  red line med ok: trust {before['patient_trust']:.3f}->{after['patient_trust']:.3f}、"
+        f"anxiety {before['patient_anxiety']:.3f}->{after['patient_anxiety']:.3f}、派发 1 次"
+    )

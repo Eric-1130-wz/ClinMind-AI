@@ -13,6 +13,7 @@ import sys
 import time
 import unittest
 import tempfile
+import threading
 from pathlib import Path
 
 # Add project root to sys.path
@@ -102,7 +103,12 @@ class Tee:
         self.files = files
     def write(self, obj):
         for f in self.files:
-            f.write(obj)
+            try:
+                f.write(obj)
+            except UnicodeEncodeError:
+                # GBK 控制台写不了 emoji 等字符：降级替换，绝不让日志输出打断测试。
+                enc = getattr(f, "encoding", None) or "utf-8"
+                f.write(obj.encode(enc, "replace").decode(enc, "replace"))
             f.flush()
     def flush(self):
         for f in self.files:
@@ -121,6 +127,9 @@ def run_all():
 
     tracer = SimpleCoverageTracer(os.path.join(PROJECT_ROOT, "app"))
     sys.settrace(tracer.trace_fn)
+    # FastAPI TestClient 的同步端点跑在工作线程里，只 settrace 主线程会让
+    # routes_action.py 这类模块的覆盖率恒显示 10% 左右（测量口径失真）。
+    threading.settrace(tracer.trace_fn)
 
     start_time = time.time()
     results = {}
@@ -138,12 +147,30 @@ def run_all():
             ("test_physiology_lethal_medication_rupture_countdown", te.test_physiology_lethal_medication_rupture_countdown),
             ("test_guardrail_physical_exam_routing", te.test_guardrail_physical_exam_routing),
             ("test_guardrail_lab_and_imaging_routing", te.test_guardrail_lab_and_imaging_routing),
+            ("test_guardrail_routes_every_authored_lab_panel", te.test_guardrail_routes_every_authored_lab_panel),
             ("test_agent_patient_trust_evolution", te.test_agent_patient_trust_evolution),
             ("test_agent_nurse_order_and_critical_alarms", te.test_agent_nurse_order_and_critical_alarms),
             ("test_ged_evaluator_expert_pathway", te.test_ged_evaluator_expert_pathway),
             ("test_ged_evaluator_fatal_contraindication", te.test_ged_evaluator_fatal_contraindication),
             ("test_api_full_flow", te.test_api_full_flow),
         ]
+        # 自动发现：任何新增的 test_*（无必填参数的零参函数）都自动计入，避免
+        # 手工白名单漏登记导致新用例「写了但不算数」。
+        _listed = {n for n, _ in te_tests}
+        for _name in sorted(dir(te)):
+            if not _name.startswith("test_") or _name in _listed:
+                continue
+            _fn = getattr(te, _name)
+            if not callable(_fn):
+                continue
+            _required = [
+                p for p in inspect.signature(_fn).parameters.values()
+                if p.default is inspect._empty
+                and p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+            ]
+            if _required:
+                continue
+            te_tests.append((_name, _fn))
         passed_te = 0
         for name, fn in te_tests:
             try:
@@ -170,15 +197,28 @@ def run_all():
     static_runner = unittest.TextTestRunner(verbosity=1)
     static_res = static_runner.run(static_suite)
 
-    print("\n[PHASE 4] Executing tests/test_game_backend.py (New UI & Persistence)...")
-    game_suite = unittest.defaultTestLoader.loadTestsFromName("tests.test_game_backend")
-    game_res = unittest.TextTestRunner(verbosity=1).run(game_suite)
+    print("\n[PHASE 4] Executing tests/test_session_backend.py (Session & Persistence)...")
+    session_suite = unittest.defaultTestLoader.loadTestsFromName("tests.test_session_backend")
+    session_res = unittest.TextTestRunner(verbosity=1).run(session_suite)
 
     print("\n[PHASE 5] Model configuration & v2 startup regressions...")
     v2_suite = unittest.defaultTestLoader.loadTestsFromName("tests.test_v2_regressions")
     v2_res = unittest.TextTestRunner(verbosity=1).run(v2_suite)
 
+    print("\n[PHASE 6] Executing tests/test_emotion_tick.py (Emotion Engine & Settlement)...")
+    emotion_suite = unittest.defaultTestLoader.loadTestsFromName("tests.test_emotion_tick")
+    emotion_res = unittest.TextTestRunner(verbosity=1).run(emotion_suite)
+
+    print("\n[PHASE 7] Executing tests/test_api_emotion.py (API Emotion Channels)...")
+    api_emotion_suite = unittest.defaultTestLoader.loadTestsFromName("tests.test_api_emotion")
+    api_emotion_res = unittest.TextTestRunner(verbosity=1).run(api_emotion_suite)
+
+    print("\n[PHASE 8] Executing tests/test_outcomes.py (Outcome Engine & Knowledge Cards)...")
+    outcomes_suite = unittest.defaultTestLoader.loadTestsFromName("tests.test_outcomes")
+    outcomes_res = unittest.TextTestRunner(verbosity=1).run(outcomes_suite)
+
     sys.settrace(None)
+    threading.settrace(None)
     elapsed = time.time() - start_time
 
     # Coverage summary
@@ -187,7 +227,7 @@ def run_all():
     print("\n" + "=" * 70)
     print("  AUTOMATION TEST RESULTS SUMMARY")
     print("=" * 70)
-    suites = [e2e_res, static_res, game_res, v2_res]
+    suites = [e2e_res, static_res, session_res, v2_res, emotion_res, api_emotion_res, outcomes_res]
     total_run = len(te_tests) + sum(r.testsRun for r in suites)
     total_passed = passed_te + sum(r.testsRun - len(r.failures) - len(r.errors) for r in suites)
     total_failed = len(te_tests) - passed_te + int(load_failed) + sum(len(r.failures) + len(r.errors) for r in suites)
