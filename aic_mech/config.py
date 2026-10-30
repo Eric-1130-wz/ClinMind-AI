@@ -187,6 +187,60 @@ def save_llm_config(provider: str, api_key: str, base_url: str = "", model: str 
 VIRTUAL_TICK_RATE_HZ: float = 1.0  # 1Hz physiology tick
 TIME_ACCELERATION_FACTOR: float = 1.0  # 1.0 = real-time, can accelerate virtual clock
 
+# ---------------------------------------------------------------------------
+# Emotion / relationship engine parameters
+# Frozen by spec/05-P0接口契约.md §1 -- names, types and defaults must match it.
+# ---------------------------------------------------------------------------
+# 病例数据校验（D-27）：默认档「跳过并留痕」，严格档「拒绝启动」
+CASE_VALIDATION_STRICT: bool = False
+
+# ---------------------------------------------------------------------------
+EMOTION_TICK_SECONDS: float = 5.0          # 情绪结算周期（秒）
+EMOTION_TRUST_INIT: float = 0.40           # 信任度初始值
+EMOTION_PATIENT_ANXIETY_INIT: float = 0.50  # 患者焦虑初始值
+EMOTION_FAMILY_ANXIETY_INIT: float = 0.65   # 家属焦虑初始值
+EMOTION_TRUST_TIME_DELTA: float = -0.004     # 每个结算周期信任时间项
+EMOTION_PATIENT_ANXIETY_TIME_DELTA: float = 0.004   # 每个结算周期患者焦虑时间项
+EMOTION_FAMILY_ANXIETY_TIME_DELTA: float = 0.003    # 每个结算周期家属焦虑时间项
+EMOTION_TRUST_TIME_FLOOR: float = 0.15      # 时间项信任下限
+EMOTION_ANXIETY_TIME_CEILING: float = 0.85  # 时间项焦虑上限
+EMOTION_IDLE_EVENT_ENABLED: bool = False    # 空转事件开关（默认关）
+EMOTION_REFUSE_THRESHOLD: float = 0.90      # 拒绝配合阈值
+EMOTION_LEAVE_IMMEDIATE: float = 0.05       # 立即离院阈值
+EMOTION_LEAVE_SUSTAINED: float = 0.10       # 持续离院阈值
+EMOTION_LEAVE_SUSTAINED_SECONDS: int = 60   # 持续离院计时（秒）
+EMOTION_TREND_WINDOW_SECONDS: int = 30      # 趋势箭头窗口（秒）
+EMOTION_UI_HINT_MIN_DELTA: float = 0.005    # UI/日志提示阈值（不影响引擎累计）
+
+# ---------------------------------------------------------------------------
+# 交互与 LLM 侧参数（spec/02 §4 检查拒诊、spec/04 §3 检验 TAT、spec/04 §5 LLM 守卫）。
+# API 层此前用 getattr(config, ...) 兜底，这里补上真键，缺省值与兜底值一致。
+# ---------------------------------------------------------------------------
+EXAM_REFUSE_ANXIETY: float = 0.90           # 体查/检查被拒的患者焦虑阈值
+EXAM_REFUSE_PROBABILITY: float = 0.50       # 达到阈值后被拒的概率
+LAB_PENDING_TAT_THRESHOLD_SECONDS: int = 900  # TAT 超过该秒数的检验项进 pending
+LLM_TIMEOUT_SECONDS: float = 8.0            # 统一 LLM 超时（秒）
+LLM_GUARD_MAX_CHARS: int = 220              # LLM 输出单段最大长度
+LLM_GUARD_BLOCK_DIAGNOSIS: bool = True      # 拦截专业诊断名与剂量
+
+# ---------------------------------------------------------------------------
+# P3 接线参数：情绪文案分档 + 处方红线严重度 + 血流动力学规则（spec/01 §1.2/§1.5，
+# spec/02 §K-11）。全部为可注入常量，病例 JSON 的 ``hemodynamic_rules`` 优先。
+# ---------------------------------------------------------------------------
+EMOTION_SCRIPT_TRUST_HIGH: float = 0.70     # 文案 high 档下限（patient_trust ≥ 0.70）
+EMOTION_SCRIPT_TRUST_MID: float = 0.30      # 文案 mid 档下限（0.30 ≤ trust < 0.70）
+
+# 夹层病程时钟（原 physiology_engine 魔法数字 120/30/15 常态化为配置项）
+PHYS_RUPTURE_TO_EFFUSION_S: float = 120.0   # 致死红线 → S3 心包渗血倒计时
+PHYS_TAMPONADE_STAGE_S: float = 30.0        # S3 → S4 心包填塞
+PHYS_RUPTURE_TO_ARREST_S: float = 15.0      # S4 → S5 破裂 / S5 → S6 骤停
+PHYS_CRISIS_TIMEOUT_S: float = 300.0        # 未降压（S0）超时进入高血压危象
+
+# 非夹层教学病例的红线致死路径：无心包填塞解剖，直接 30 s 速崩至 S6
+PHYS_REDLINE_COLLAPSE_S: float = 30.0
+# HARMFUL 处方累计次数达到该值即升级为致死恶化（spec/01 §1.5：累计 2 次进结局 D）
+PRESCRIPTION_HARMFUL_ESCALATION_HITS: int = 2
+
 # Fatal Red-line Medications (Contraindicated for Stanford Type A Aortic Dissection)
 LETHAL_MEDICATION_KEYWORDS = [
     "aspirin", "阿司匹林",
