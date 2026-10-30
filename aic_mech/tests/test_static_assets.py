@@ -273,13 +273,23 @@ class TestStaticAssetsConsistency(unittest.TestCase):
         for phrase in ("不给出诊断名称", "剂量"):
             self.assertIn(phrase, block, f"说明书缺少边界说明：{phrase}")
 
-    def test_duplicate_record_widgets_removed(self):
+    def test_record_area_present_on_both_pages(self):
+        """两页都要有病历记录区：可展开、有计数位、有空态文案。"""
         for name in PAGES:
-            self.assertNotIn('id="record-area"', _page(name), name)
+            html = _page(name)
+            self.assertIn('id="record-area"', html, f"{name} 缺少 #record-area")
+            self.assertIn('class="scene-record-area"', html, f"{name} 缺少 scene-record-area")
+            self.assertIn('class="scene-record-list"', html, f"{name} 缺少记录列表容器")
+            self.assertIn("scene-record-count", html, f"{name} 缺少记录条数位")
+            self.assertIn("scene-record-empty", html, f"{name} 缺少空态文案")
+            self.assertIn("<details", html, f"{name} 记录区应当可展开")
+
+    def test_toolbar_exposes_manual_and_record_entry(self):
+        """顶部工具条必须同时挂「说明书」与「病历记录」两个入口。"""
         code = _slurp(SCENE_JS)
-        self.assertNotIn("['病历记录',openRecord]", code)
-        self.assertIn("['接诊记录',showLog]", code)
-        self.assertIn("['说明书',openManual]", code)
+        self.assertIn("scene-tools", code, "工具条容器缺失")
+        self.assertIn("['病历记录',openRecord]", code, "工具条缺少病历记录入口")
+        self.assertIn("['说明书',openManual]", code, "工具条缺少说明书入口")
 
     def test_esc_guard_checks_every_dialog(self):
         """Esc 判定必须看全部 dialog，不能只认全局 dialog 实例。"""

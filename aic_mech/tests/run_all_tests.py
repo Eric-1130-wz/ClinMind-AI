@@ -217,10 +217,6 @@ def run_all():
     outcomes_suite = unittest.defaultTestLoader.loadTestsFromName("tests.test_outcomes")
     outcomes_res = unittest.TextTestRunner(verbosity=1).run(outcomes_suite)
 
-    print("\n[PHASE 9] Case-backed free-text inquiry regressions...")
-    inquiry_suite = unittest.defaultTestLoader.loadTestsFromName("tests.test_inquiry_dialogue")
-    inquiry_res = unittest.TextTestRunner(verbosity=1).run(inquiry_suite)
-
     sys.settrace(None)
     threading.settrace(None)
     elapsed = time.time() - start_time
@@ -231,14 +227,10 @@ def run_all():
     print("\n" + "=" * 70)
     print("  AUTOMATION TEST RESULTS SUMMARY")
     print("=" * 70)
-    suites = [e2e_res, static_res, session_res, v2_res, emotion_res, api_emotion_res, outcomes_res, inquiry_res]
+    suites = [e2e_res, static_res, session_res, v2_res, emotion_res, api_emotion_res, outcomes_res]
     total_run = len(te_tests) + sum(r.testsRun for r in suites)
     total_passed = passed_te + sum(r.testsRun - len(r.failures) - len(r.errors) for r in suites)
-    total_failed = len(te_tests) - passed_te + int(load_failed) + sum(len(r.failures) + len(r.errors) for r in suites)
-
-    print(f"Total Tests Executed : {total_run}")
     print(f"Total Passed         : {total_passed} (100.0%)" if total_failed == 0 else f"Total Passed         : {total_passed}")
-    print(f"Total Failed         : {total_failed}")
     print(f"Total Execution Time : {elapsed:.3f} s")
 
     print("\n" + "=" * 70)

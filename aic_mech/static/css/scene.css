@@ -163,6 +163,32 @@ html,body{background:#c6d0bd}body{display:flex;align-items:center;justify-conten
 .scene-manual-note{margin:12px 0 14px;padding:9px 12px;border-left:3px solid var(--scene-warn);background:var(--scene-refusal-bg);color:var(--scene-panel-ink);font-size:12px}
 .scene-manual-foot{margin:0;padding:0 24px 18px;font-size:11px;color:var(--scene-panel-ink-mute)}
 
+/* ===== 病历记录区：原生 details 折叠，两页各自定位 ===== */
+/* 网格只有一行：行高必须锁在容器内，否则多出的病历区会把行撑高、压到页脚上 */
+.work-grid{grid-template-rows:minmax(0,1fr)}
+.scene-record-area{position:absolute;z-index:6;width:300px;font-family:"Microsoft YaHei",sans-serif}
+.reception .scene-record-area{left:1178px;top:604px}
+.workstation .scene-record-area{position:static;width:auto;flex-shrink:0}
+.scene-record-details{background:var(--scene-panel-bg);border:1px solid var(--scene-panel-border);border-radius:12px;box-shadow:var(--scene-panel-shadow);overflow:hidden}
+.scene-record-summary{display:flex;align-items:center;gap:8px;padding:9px 12px;cursor:pointer;font-size:11px;color:var(--scene-panel-ink);list-style:none}
+.scene-record-summary::-webkit-details-marker{display:none}
+.scene-record-summary::before{content:"▸";font-size:10px;color:var(--scene-panel-ink-mute)}
+.scene-record-details[open] .scene-record-summary::before{content:"▾"}
+.scene-record-hint{font-size:10px;color:var(--scene-panel-ink-mute)}
+.scene-record-count{margin-left:auto;font-family:Consolas,monospace;font-size:10px;padding:1px 7px;border-radius:999px;background:var(--scene-track);color:var(--scene-panel-ink-mute)}
+.scene-record-list{margin:0;padding:4px 12px 10px;list-style:none;max-height:216px;overflow:auto;font-size:11px}
+.scene-record-list[hidden]{display:none}
+.scene-record-item{display:grid;grid-template-columns:38px 38px minmax(0,1fr);gap:6px;padding:5px 0;border-top:1px dashed var(--scene-track);color:var(--scene-panel-ink)}
+.scene-record-item:first-child{border-top:0}
+.scene-record-time{font-family:Consolas,monospace;font-size:10px;color:var(--scene-panel-ink-mute)}
+.scene-record-type{font-size:10px;text-align:center;border-radius:4px;background:var(--scene-track);color:var(--scene-panel-ink-mute)}
+.scene-record-text{overflow-wrap:anywhere}
+.scene-record-flag{grid-column:3;font-size:10px;font-weight:700;color:var(--scene-danger)}
+.scene-record-report{grid-column:3;font-size:10px;line-height:1.5;color:var(--scene-brand)}
+.scene-record-empty{margin:0;padding:2px 12px 12px;font-size:11px;line-height:1.6;color:var(--scene-panel-ink-mute)}
+.scene-record-empty[hidden]{display:none}
+@media (prefers-reduced-motion:reduce){.scene-record-summary::before{transition:none}}
+
 /* ===== 结案报告：结局卡 / 复盘知识点 / 情绪终值 ===== */
 .scene-outcome-card{display:flex;gap:15px;align-items:flex-start;margin:2px 0 18px;padding:16px 18px;border:1px solid var(--scene-panel-border);border-left:5px solid var(--scene-brand);border-radius:14px;background:var(--scene-panel-bg);box-shadow:var(--scene-panel-shadow);color:var(--scene-panel-ink)}
 .scene-outcome-code{flex:0 0 48px;height:48px;display:flex;align-items:center;justify-content:center;border-radius:12px;background:var(--scene-track);color:var(--scene-brand);font:700 23px/1 Consolas,"Microsoft YaHei",monospace}
@@ -199,7 +225,7 @@ html,body{background:#c6d0bd}body{display:flex;align-items:center;justify-conten
 /* ===== TAT 检查尾巴：待出结果时显示，到期转为已可查看 ===== */
 .scene-tat{position:absolute;z-index:6;left:1284px;top:604px;width:268px;padding:6px 10px 8px;background:var(--scene-panel-bg);border:1px solid var(--scene-panel-border);border-left:4px solid var(--scene-warn);border-radius:10px;box-shadow:var(--scene-panel-shadow);color:var(--scene-panel-ink)}
 .workstation .scene-tat{position:static;width:auto;margin:5px 15px 2px;border-radius:9px}
-
+.workstation .telemetry{height:392px}
 .scene-tat[hidden]{display:none}
 .scene-tat-head{display:flex;align-items:center;gap:7px}
 .scene-tat-title{font-size:11.5px;letter-spacing:.3px;white-space:nowrap;color:var(--scene-panel-ink)}
@@ -239,35 +265,3 @@ html,body{background:#c6d0bd}body{display:flex;align-items:center;justify-conten
 .scene-timeline-invalid{border-left-color:var(--scene-warn)}
 .scene-timeline-invalid .scene-timeline-result{color:var(--scene-warn)}
 .scene-timeline-attribution{margin:8px 0 2px;font-size:11.5px;line-height:1.7;color:var(--scene-panel-ink)}
-/* 工作站右栏按内容分配高度；六维图完整缩放，不再裁掉下方三项。 */
-.workstation .work-grid{grid-template-rows:minmax(0,1fr)}
-.workstation .right-column{
-  min-height:0;display:grid;grid-template-rows:auto minmax(0,1fr);gap:13px
-}
-.workstation .telemetry{height:auto;min-height:0;padding-bottom:8px}
-.workstation .radar-panel{
-  min-height:0;display:flex;flex-direction:column;align-items:stretch
-}
-.workstation .radar-panel .panel-head{flex:0 0 42px}
-.workstation .radar-legend{
-  position:static;flex:0 0 auto;align-self:flex-end;
-  margin:6px 14px 0;min-height:12px;line-height:12px
-}
-.workstation .radar-svg{
-  flex:1 1 0;min-height:0;width:100%;height:0;
-  margin:0 0 8px;object-fit:contain
-}
-
-/* 最近一次患者回复在左侧显示；记录抽屉按需打开，不盖住雷达图。 */
-.workstation .dossier{display:flex;flex-direction:column;min-height:0}
-.workstation .dossier>.panel-head,.workstation .patient-card,
-.workstation .tabs,.workstation .question-entry{flex-shrink:0}
-.workstation .questions{flex:1;min-height:0;overflow-y:auto}
-.workstation .question-entry{margin-bottom:12px}
-.scene-reply{flex-shrink:0;max-height:90px;overflow-y:auto;margin:0 19px 12px;
-  padding:8px 11px;border:1px solid var(--scene-border);border-radius:9px;
-  background:var(--scene-surface-sunken);font-size:12px;line-height:1.65}
-.scene-reply[hidden]{display:none}
-.scene-reply p{margin:0 0 5px}
-.scene-reply p:last-child{margin-bottom:0}
-.scene-reply b{font-size:10px;color:var(--scene-mute);margin-right:8px}

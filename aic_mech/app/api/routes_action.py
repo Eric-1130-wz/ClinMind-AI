@@ -312,22 +312,6 @@ def execute_action(req: ActionRequest):
 
     # ================= 1. INQUIRY (问诊沟通) =================
     if action_type in (ActionType.INQUIRY, "inquiry", "ask"):
-        # 从持久化会话恢复近期对话，刷新/重启后追问仍有上下文。
-        session.agent_engine.dialogue_history = list(session.dialogues[-24:])
-        for previous in reversed(session.agent_engine.dialogue_history):
-            if previous.speaker == "doctor":
-                topics = session.agent_engine.inquiry_dialogue.topics(previous.text)
-                if topics:
-                    session.agent_engine.inquiry_dialogue.last_topics = topics
-                    break
-        session.agent_engine.clinical_context = {
-            "patient_state": current_state.value,
-            "vitals": session.physiology_engine.get_current_vitals().model_dump(),
-            "recent_actions": [
-                {"action_type": _action_kind(action), "content": action.content}
-                for action in session.action_history[-6:]
-            ],
-        }
         inquiry_result = session.agent_engine.handle_inquiry(content, current_state)
         dialogues, inquiry_kind = _split_inquiry_result(inquiry_result)
         _guard_llm_dialogues(dialogues)

@@ -486,6 +486,52 @@
     setManualTab(0);
   }
 
+  /* ===== 病历记录区：已执行操作 + 检查结果摘要，按 virtual_time_seconds 排序展示 ===== */
+  const ACTION_LABELS = {inquiry: '问诊', physical_exam: '体查', lab_order: '检验', medication: '处方', rescue_disposition: '转归'};
+  function recordClock(action) {
+    const total = Math.max(0, Math.round(Number(action?.virtual_time_seconds) || 0));
+    return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+  }
+  function reportSummary(result) {
+    if (!result || typeof result !== 'object') return '';
+    const pairs = Object.entries(result.details || {}).slice(0, 2).map(([key, value]) => `${key} ${value}`);
+    const conclusion = String(result.conclusion || result.interpretation || '').trim();
+    const text = [...pairs, conclusion].filter(Boolean).join(' · ');
+    return text.length > 72 ? `${text.slice(0, 71)}…` : text;
+  }
+  function renderRecord(source) {
+    const root = $('#record-area');
+    if (!root) return;
+    const list = $('.scene-record-list', root);
+    const empty = $('.scene-record-empty', root);
+    const count = $('.scene-record-count', root);
+    const actions = Array.isArray(source?.actions) ? source.actions : [];
+    if (list) {
+      list.replaceChildren();
+      actions.forEach(action => {
+        const item = element('li', undefined, 'scene-record-item');
+        item.append(
+          element('span', recordClock(action), 'scene-record-time'),
+          element('span', ACTION_LABELS[String(action?.action_type || '').toLowerCase()] || '操作', 'scene-record-type'),
+          element('span', String(action?.content || '（未记录内容）'), 'scene-record-text')
+        );
+        if (action?.is_contraindicated) item.append(element('span', `禁忌操作 · ${action.warning_message || '与安全底线冲突'}`, 'scene-record-flag'));
+        const brief = reportSummary(action?.result);
+        if (brief) item.append(element('span', brief, 'scene-record-report'));
+        list.append(item);
+      });
+      list.hidden = actions.length === 0;
+    }
+    if (empty) empty.hidden = actions.length > 0;
+    if (count) count.textContent = `${actions.length} 条`;
+  }
+  function openRecord() {
+    const details = $('#record-area details');
+    if (!details) return;
+    renderRecord(snapshot);
+    details.open = true;
+    $('.scene-record-summary', details)?.focus();
+  }
   function showLog() {
     const body = $('.scene-log-body', log); body.replaceChildren();
     const messages = snapshot?.dialogues || [];
@@ -695,43 +741,23 @@
   const inputWrapper = $('.question-entry .text-input') || $('.action-dock .text-input');
   const input = document.createElement('input'); input.className='scene-input'; input.placeholder='输入追问或诊疗指令……'; input.setAttribute('aria-label','问诊或诊疗指令'); input.maxLength=4000;
   inputWrapper.replaceChildren(input); input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.isComposing)submit();});
-  const reply = element('div',undefined,'scene-reply');
-  reply.setAttribute('role','status');reply.setAttribute('aria-live','polite');reply.hidden=true;
-  if(workstation) $('.question-entry').after(reply);
-  function showReply(result){
-    if(!workstation)return;
-    reply.replaceChildren();
-    for(const message of result.dialogues || []){
-      if(!['patient','family'].includes(message.speaker))continue;
-      const line=element('p');
-      line.append(element('b',message.role_title || names[message.speaker]),document.createTextNode(message.text));
-      reply.append(line);
-    }
-    reply.hidden=!reply.childElementCount;
-    reply.scrollTop=0;
-  }
-  function submit(){
-    const content=input.value.trim();if(!content)return;
-    // 在其他页签下追问病史时，仍将自然问句交给患者而非误发药物/检验医嘱。
-    const question=/[？?吗呢]|什么时候|何时|多久|怎么|哪里|哪儿|有没有|是否|请问/.test(content);
-    execute(content,question?'inquiry':undefined);
-  }
+  function submit(){if(input.value.trim())execute(input.value.trim());}
   interactive($('.send'),submit,'发送指令');
   $$('.dock-tab,.tab').forEach((el,i)=>interactive(el,()=>setTab(i),menu[i].label));
   async function refresh() {
     snapshot=await api(`/api/case/session/${encodeURIComponent(sessionId)}/workspace`);
     renderCaseProfile(snapshot.case_profile);
-    telemetry(snapshot); radar(snapshot.radar_scores); updateSpeech();
+    telemetry(snapshot); radar(snapshot.radar_scores); updateSpeech(); renderRecord(snapshot);
     $$('.report .paper-bottom span').forEach(el=>{el.textContent=(snapshot.reports?.length?'可查看':'未获取');});
   }
-  async function execute(content, overrideType) {
+  async function execute(content) {
     if (busy || !sessionId) return;
     if (state.ended) {toast('本次训练已结束，可查看报告或开始下一次训练。');return;}
     busy=true;document.body.classList.add('is-busy');
     try {
-      const result=await api('/api/action/execute',{session_id:sessionId,action_type:overrideType || menu[tab].type,content,params:{}});
-      renderTat({...result, content});showReply(result);
-      input.value='';await refresh();if(!log.hidden)showLog();
+      const result=await api('/api/action/execute',{session_id:sessionId,action_type:menu[tab].type,content,params:{}});
+      renderTat({...result, content});
+      input.value='';await refresh();showLog();
       if(result.report){const body=openDialog('客观检查报告');body.append(reportCard(result.report));}
       toast(result.warning || result.message,!!result.warning);
     } catch(e){toast(e.message,true);}finally{busy=false;document.body.classList.remove('is-busy');}
@@ -974,7 +1000,7 @@
     select.onchange();
   }
   const tools=element('div',undefined,'scene-tools');
-  [['接诊记录',showLog],['说明书',openManual],['报告',()=>showReports()],['结案报告',evaluation],['AI 配置',settings]].forEach(([text,fn])=>{const b=element('button',text);b.onclick=fn;tools.append(b);});
+  [['接诊记录',showLog],['病历记录',openRecord],['说明书',openManual],['报告',()=>showReports()],['结案报告',evaluation],['AI 配置',settings]].forEach(([text,fn])=>{const b=element('button',text);b.onclick=fn;tools.append(b);});
   ($('.work-header') || $('.hud')).append(tools);
   interactive($('.monitor-label'),()=>{location.href='/static/workstation.html';},'打开工作站');
   // The monitor illustration itself is a hit target as well.
@@ -1007,7 +1033,7 @@
   }
   async function initialize() {
     stopped=false;reconnectCount=0;lastAlarmAt=-Infinity;
-    state.ended=false;state.refused=false;state.lastSampleAt=0;reply.hidden=true;reply.replaceChildren();
+    state.ended=false;state.refused=false;state.lastSampleAt=0;
     for(const key of Object.keys(state.history))state.history[key]=[];
     for(const key of Object.keys(state.trendHint))state.trendHint[key]=null;
     document.body.classList.remove('scene-ended','is-finished');
@@ -1032,6 +1058,7 @@
   const familySpeech=$('.speech.family p');if(familySpeech)familySpeech.textContent='他平时有高血压，具体用药情况还需要问他。';
   ensureManual();
   ensureDisclaimer();
+  renderRecord(snapshot);
   startEmotionTicker();
   initialize().catch(e=>toast(`服务连接失败：${e.message}。请使用 start.cmd 启动后访问页面。`,true));
 })();
