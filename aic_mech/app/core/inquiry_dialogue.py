@@ -24,6 +24,10 @@ class CaseInquiry:
         self.last_topics: List[str] = []
         self.variants: Dict[str, int] = {}
 
+    def is_followup(self, query: str) -> bool:
+        """纯追问句（“具体呢”“后来呢”）：只沿用上一轮话题，不引入新事实。"""
+        return bool(FOLLOWUP.fullmatch(query.strip().lower()))
+
     def topics(self, query: str) -> List[str]:
         q = query.strip().lower()
         if FOLLOWUP.fullmatch(q):
