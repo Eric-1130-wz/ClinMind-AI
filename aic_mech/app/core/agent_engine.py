@@ -374,10 +374,13 @@ class AgentEngine:
             return self.last_question_kind
 
         kind = QUESTION_RELEVANT if self._matches_case_inquiry(normalized) else QUESTION_IRRELEVANT
-        # 纯追问（“具体呢”“后来呢”）按上一轮话题续问，话题非空即算切题；
-        # 首句就是追问（无上文）仍判无关，避免空口攀附病例语料。
-        if kind != QUESTION_RELEVANT and self.inquiry_dialogue.last_topics and self.inquiry_dialogue.is_followup(query):
-            kind = QUESTION_RELEVANT
+        # 病例字段能答出来的问句就是切题问诊（「疼了多久」「有药物过敏吗」这类自然问法
+        # 未必出现在 inquiry_points 里，不能因为没命中词条就按无关扣信任）。
+        # 纯追问（「具体呢」「后来呢」）由 topics() 继承上一轮话题后同样在此判切题。
+        # 姓名/年龄/职业这类身份问题不计入切题（验收 02 的无关提问口径：「今年多大」）。
+        if kind != QUESTION_RELEVANT:
+            if any(topic != "identity" for topic in self.inquiry_dialogue.topics(query)):
+                kind = QUESTION_RELEVANT
         for previous in self._recent_inquiries:
             if normalized == previous or normalized in previous or previous in normalized:
                 kind = QUESTION_REPEAT

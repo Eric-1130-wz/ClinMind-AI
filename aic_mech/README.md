@@ -77,15 +77,17 @@ aic_mech/
 │       ├── scene.js                 # 双页共享交互层：场景、监护、接诊记录、报告、配置
 │       └── audio_alerts.js          # Web Audio 监护仪蜂鸣与危急值警报 (双页共用)
 │
-├── tests/                           # 自动化测试套件 (187 项，语句覆盖率 89.1%)
+├── tests/                           # 自动化测试套件 (212 项，语句覆盖率 89.0%)
 │   ├── test_engines.py              # 核心引擎功能自检
 │   ├── test_e2e_edge_cases.py       # 极限边界、熔断致死与并发用例
 │   ├── test_ai_native_capabilities.py # 多智能体原生能力用例
 │   ├── test_v2_regressions.py       # v2 回归用例
 │   ├── test_session_backend.py      # 会话持久化/隔离/结案冻结与静态资源可达性
 │   ├── test_static_assets.py        # 双页前端资源可达性与样式/交互层契约校验
+│   ├── test_inquiry_dialogue.py     # 自由问诊/多轮追问回归 (PHASE 9，已计入 212 项)
 │   ├── browser_smoke.cjs            # Puppeteer 冒烟脚本 (需手动执行)
 │   ├── browser_v2.cjs               # Puppeteer 双页联调脚本 (需手动执行)
+│   ├── browser_layout_dialogue.cjs  # 问诊对话布局脚本 (需手动执行，同需 Playwright)
 │   └── run_all_tests.py             # 综合测试运行器与代码覆盖率统计
 │
 ├── config.py                        # 全局配置中心 (端口/模型Key/离线开关)
@@ -121,7 +123,7 @@ python main.py
 ```bash
 python tests/run_all_tests.py
 ```
-*(将自动执行 187 项自动化测试用例，并输出模块覆盖率报告。预期结论：187 Passed, 0 Failed)*
+*(将自动执行 212 项自动化测试用例，并输出模块覆盖率报告。预期结论：212 Passed, 0 Failed)*
 
 ---
 
