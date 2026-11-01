@@ -108,6 +108,65 @@ fn piped_tail<R: Read + Send + 'static>(mut r: R, tag: &'static str) {
     });
 }
 
+/// 把 Windows 原生标题栏染成应用品牌色。
+///
+/// 不处理的话，浅灰标题栏和界面里的墨绿/米黄完全不是一路，上面还压着一个
+/// 系统默认图标。Win11 支持 DWMWA_CAPTION_COLOR（任意色）+ DWMWA_TEXT_COLOR；
+/// 更老的系统这两个属性会被忽略，此时靠 immersive dark mode 至少压成深色。
+#[cfg(windows)]
+fn style_titlebar(hwnd: isize) {
+    use std::ffi::c_void;
+
+    #[link(name = "dwmapi")]
+    extern "system" {
+        fn DwmSetWindowAttribute(hwnd: isize, attr: u32, pv: *const c_void, cb: u32) -> i32;
+    }
+
+    /// COLORREF 是 0x00BBGGRR，不是 RGB 顺序。
+    fn colorref(r: u8, g: u8, b: u8) -> u32 {
+        (r as u32) | ((g as u32) << 8) | ((b as u32) << 16)
+    }
+
+    const DWMWA_USE_IMMERSIVE_DARK_MODE: u32 = 20;
+    const DWMWA_BORDER_COLOR: u32 = 34;
+    const DWMWA_CAPTION_COLOR: u32 = 35;
+    const DWMWA_TEXT_COLOR: u32 = 36;
+
+    let caption = colorref(0x2d, 0x62, 0x58); // #2d6258，取自 scene.css 的 .brand-mark 描边色
+    let text = colorref(0xff, 0xff, 0xff);
+    let dark = 1u32;
+
+    unsafe {
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_USE_IMMERSIVE_DARK_MODE,
+            &dark as *const u32 as *const c_void,
+            4,
+        );
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_CAPTION_COLOR,
+            &caption as *const u32 as *const c_void,
+            4,
+        );
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_TEXT_COLOR,
+            &text as *const u32 as *const c_void,
+            4,
+        );
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_BORDER_COLOR,
+            &caption as *const u32 as *const c_void,
+            4,
+        );
+    }
+}
+
+#[cfg(not(windows))]
+fn style_titlebar(_hwnd: isize) {}
+
 fn fail(app: &tauri::AppHandle, msg: String) {
     eprintln!("{msg}");
     let html = format!(
@@ -206,8 +265,16 @@ fn main() {
                 .min_inner_size(1024.0, 680.0)
                 .center()
                 .build();
-                if let Err(e) = window {
-                    eprintln!("[shell] 窗口创建失败: {e}");
+                match window {
+                    Ok(w) => {
+                        #[cfg(windows)]
+                        if let Ok(hwnd) = w.hwnd() {
+                            style_titlebar(hwnd.0 as isize);
+                        }
+                        #[cfg(not(windows))]
+                        let _ = &w;
+                    }
+                    Err(e) => eprintln!("[shell] 窗口创建失败: {e}"),
                 }
             });
 
