@@ -17,3 +17,13 @@ browser-check.png
 .idea/
 .DS_Store
 Thumbs.db
+
+# 桌面打包产物（可再生：pwsh packaging/build.ps1）
+packaging/build/
+packaging/dist/
+packaging/*.spec
+packaging/*.png
+packaging/tauri/node_modules/
+packaging/tauri/src-tauri/target/
+packaging/tauri/src-tauri/gen/
+packaging/tauri/src-tauri/sidecar/

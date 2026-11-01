@@ -1,0 +1,14 @@
+# crates.io 在本机不可达（index.crates.io / static.crates.io 超时），
+# 用 rsproxy 镜像，仅作用于本目录下的 cargo 构建，不改用户全局配置。
+[source.crates-io]
+replace-with = 'rsproxy-sparse'
+
+[source.rsproxy-sparse]
+registry = "sparse+https://rsproxy.cn/index/"
+
+[registries.rsproxy]
+index = "sparse+https://rsproxy.cn/index/"
+
+[net]
+retry = 5
+git-fetch-with-cli = true

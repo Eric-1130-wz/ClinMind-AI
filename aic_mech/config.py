@@ -6,8 +6,13 @@ from datetime import datetime, timezone
 
 BASE_DIR = Path(__file__).resolve().parent
 
+# 打包态（PyInstaller onefile）下 BASE_DIR 落在临时解压目录，写进去的东西随进程
+# 退出即消失；桌面外壳用 CLINMIND_CONFIG_DIR 把它指到用户数据目录。源码直跑时
+# 该变量不存在，CONFIG_DIR 恒等于 BASE_DIR，行为与原来完全一致。
+CONFIG_DIR: Path = Path(os.getenv("CLINMIND_CONFIG_DIR", str(BASE_DIR)))
+
 # Auto-load .env file if present
-ENV_FILE = BASE_DIR / ".env"
+ENV_FILE = CONFIG_DIR / ".env"
 def _load_env_file():
     if not ENV_FILE.exists():
         return
