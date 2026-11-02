@@ -1,4 +1,4 @@
-#requires -Version 7.0
+﻿#requires -Version 5.1
 <#
 .SYNOPSIS
   构建 ClinMind-AI 的 Windows 单文件安装包（Tauri NSIS setup.exe）。
