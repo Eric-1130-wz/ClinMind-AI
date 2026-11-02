@@ -14,6 +14,7 @@ from typing import Dict, Any, List, Optional, Mapping, Tuple
 import httpx
 from app.models.entities import AgentState, DialogueMessage, ActionType, PatientStateEnum
 from app.core.llm_guard import guard_structured, guard_text, parse_structured
+from app.core.inquiry_dialogue import CaseInquiry
 import config
 
 
@@ -42,6 +43,8 @@ QUESTION_KINDS = (QUESTION_RELEVANT, QUESTION_REPEAT, QUESTION_IRRELEVANT)
 
 # 判「重复」的近期窗口：与最近 N 次问诊比对（归一化后相同或互为子串）
 INQUIRY_RECENT_WINDOW = 8
+# 对话历史保留上限：在线分支取最近 12 条做上下文，其余只做记录防无限增长
+DIALOGUE_HISTORY_LIMIT = 200
 # 判「切题」的字符二元组重合下限：少于此数不算问到病例内容
 INQUIRY_MIN_NGRAM_HITS = 2
 # 问句通用虚词二元组：不承载病例信息，不进重合计数
@@ -371,6 +374,13 @@ class AgentEngine:
             return self.last_question_kind
 
         kind = QUESTION_RELEVANT if self._matches_case_inquiry(normalized) else QUESTION_IRRELEVANT
+        # 病例字段能答出来的问句就是切题问诊（「疼了多久」「有药物过敏吗」这类自然问法
+        # 未必出现在 inquiry_points 里，不能因为没命中词条就按无关扣信任）。
+        # 纯追问（「具体呢」「后来呢」）由 topics() 继承上一轮话题后同样在此判切题。
+        # 姓名/年龄/职业这类身份问题不计入切题（验收 02 的无关提问口径：「今年多大」）。
+        if kind != QUESTION_RELEVANT:
+            if any(topic != "identity" for topic in self.inquiry_dialogue.topics(query)):
+                kind = QUESTION_RELEVANT
         for previous in self._recent_inquiries:
             if normalized == previous or normalized in previous or previous in normalized:
                 kind = QUESTION_REPEAT
@@ -387,7 +397,12 @@ class AgentEngine:
     ) -> InquiryMessages:
         """handle_inquiry 的分类版：返回列表子类，额外带 question_kind。"""
         kind = self.classify_inquiry(query)
-        return InquiryMessages(self._handle_inquiry_impl(query, current_state), question_kind=kind)
+        messages = self._handle_inquiry_impl(query, current_state)
+        # 在线分支的最近 12 条上下文与结案回看都读这份历史；此前只声明从未落账。
+        self.dialogue_history.extend(messages)
+        if len(self.dialogue_history) > DIALOGUE_HISTORY_LIMIT:
+            del self.dialogue_history[:-DIALOGUE_HISTORY_LIMIT]
+        return InquiryMessages(messages, question_kind=kind)
 
     def handle_inquiry(self, query: str, current_state: PatientStateEnum = PatientStateEnum.S0_STABLE) -> List[DialogueMessage]:
         """Process clinician inquiry directed towards patient or family.
@@ -438,7 +453,9 @@ class AgentEngine:
         if config.is_online_llm_active():
             llm_messages = self._generate_multi_agent_llm_response(query)
             if llm_messages:
-                return llm_messages
+                # 保留医生的提问气泡：在线分支只负责患者/家属的应答。
+                messages.extend(llm_messages)
+                return messages
 
         topics = self.inquiry_dialogue.topics(query)
         is_catalogue = bool(self.case_data.get("case_id")) and self.case_data["case_id"] != "case_chest_pain_001"
@@ -774,6 +791,8 @@ class AgentEngine:
             "你正在参与国家级医工交叉与临床思维虚拟仿真模拟，负责在急诊抢救室协同推演多角色交互。\n"
             f"【场景设定】：{self._persona_scene()}\n"
             f"【隐秘病史设定】：{self._persona_history()}\n"
+            f"【本病例事实（唯一依据，禁止补造未记录内容）】："
+            f"{json.dumps(facts, ensure_ascii=False, default=str)}\n"
             "【多角色协同生成规则】：\n"
             "1. 绝不允许输出套话与机械模板。必须根据医生的发言内容进行自然、真实的人性化回应。\n"
             "2. 如果医生询问身体感受（如痛感性质、部位、放射方向、发病时间）：以【患者】为主回答（口语化、痛苦呻吟断续、喘息），【家属】在旁焦急补充生活细节。\n"

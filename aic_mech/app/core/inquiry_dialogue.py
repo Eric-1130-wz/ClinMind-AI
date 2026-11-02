@@ -24,9 +24,13 @@ class CaseInquiry:
         self.last_topics: List[str] = []
         self.variants: Dict[str, int] = {}
 
+    def is_followup(self, query: str) -> bool:
+        """纯追问句（“具体呢”“后来呢”）：只沿用上一轮话题，不引入新事实。"""
+        return bool(FOLLOWUP.fullmatch(query.strip().lower()))
+
     def topics(self, query: str) -> List[str]:
         q = query.strip().lower()
-        if FOLLOWUP.fullmatch(q):
+        if self.is_followup(query):
             return list(self.last_topics)
         # “药物过敏”不属于“用药史”，问哪个字段就答哪个字段。
         cleaned = q.replace("药物过敏", "过敏").replace("对什么药过敏", "过敏")

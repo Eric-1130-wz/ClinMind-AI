@@ -186,6 +186,12 @@ class SimulationSession:
             self.emotion.tick(dt)
             self.emotion_accum = self.emotion.accumulator
             self._mirror_emotion()
+            # 在线对话 prompt 要读「当前监护状态」：这里落账，避免 clinical_context 永为空对象。
+            self.agent_engine.clinical_context = {
+                "patient_state": getattr(self.physiology_engine.get_state(), "value",
+                                         str(self.physiology_engine.get_state())),
+                "vitals": vitals.model_dump() if hasattr(vitals, "model_dump") else dict(vitals),
+            }
             self._refresh_terminal()
             return vitals
 
